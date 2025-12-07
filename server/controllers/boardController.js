@@ -24,16 +24,35 @@ const mapBoard = (row) => ({
   updatedAt: row.updatedAt,
 });
 
+const ensureBoardForUser = (boardId, userId) => {
+  const db = getDB();
+  const board = db
+    .prepare('SELECT * FROM boards WHERE id = ? AND userId = ?')
+    .get(boardId, userId);
+
+  if (!board) {
+    throw notFound('Board bulunamadı');
+  }
+
+  return board;
+};
+
 const getBoards = (req, res, next) => {
   try {
+    const userId = req.user?.id;
+    if (!userId) {
+      throw badRequest('Kullanıcı bilgisi eksik');
+    }
+
     const db = getDB();
     const rows = db
       .prepare(
         `SELECT id, name, icon, iconName, background, createdAt, updatedAt
          FROM boards
+         WHERE userId = ?
          ORDER BY createdAt ASC`
       )
-      .all();
+      .all(userId);
     res.json(rows.map(mapBoard));
   } catch (error) {
     next(error);
@@ -42,6 +61,11 @@ const getBoards = (req, res, next) => {
 
 const createBoard = (req, res, next) => {
   try {
+    const userId = req.user?.id;
+    if (!userId) {
+      throw badRequest('Kullanıcı bilgisi eksik');
+    }
+
     const { name, icon = 'project', iconName = 'icon-Project', background = '' } = req.body || {};
     if (!name || !name.trim()) {
       throw badRequest('Board adı zorunludur');
@@ -51,13 +75,14 @@ const createBoard = (req, res, next) => {
     const timestamp = now();
     const result = db
       .prepare(
-        `INSERT INTO boards (name, icon, iconName, background, createdAt, updatedAt)
-         VALUES (?, ?, ?, ?, ?, ?)`
+        `INSERT INTO boards (userId, name, icon, iconName, background, createdAt, updatedAt)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`
       )
-      .run(name.trim(), icon, iconName, background, timestamp, timestamp);
+      .run(userId, name.trim(), icon, iconName, background, timestamp, timestamp);
 
     const board = mapBoard({
       id: result.lastInsertRowid,
+      userId,
       name: name.trim(),
       icon,
       iconName,
@@ -75,19 +100,13 @@ const createBoard = (req, res, next) => {
 const getBoard = (req, res, next) => {
   try {
     const boardId = Number(req.params.boardId);
+    const userId = req.user?.id;
+    if (!userId) {
+      throw badRequest('Kullanıcı bilgisi eksik');
+    }
     const db = getDB();
 
-    const boardRow = db
-      .prepare(
-        `SELECT id, name, icon, iconName, background, createdAt, updatedAt
-         FROM boards
-         WHERE id = ?`
-      )
-      .get(boardId);
-
-    if (!boardRow) {
-      throw notFound('Board bulunamadı');
-    }
+    const boardRow = ensureBoardForUser(boardId, userId);
 
     const columns = db
       .prepare(
@@ -127,15 +146,14 @@ const getBoard = (req, res, next) => {
 const updateBoard = (req, res, next) => {
   try {
     const boardId = Number(req.params.boardId);
+    const userId = req.user?.id;
+    if (!userId) {
+      throw badRequest('Kullanıcı bilgisi eksik');
+    }
     const { name, icon, iconName, background } = req.body || {};
     const db = getDB();
 
-    const existing = db
-      .prepare('SELECT * FROM boards WHERE id = ?')
-      .get(boardId);
-    if (!existing) {
-      throw notFound('Board bulunamadı');
-    }
+    const existing = ensureBoardForUser(boardId, userId);
 
     const nextBoard = {
       name: name?.trim() || existing.name,
@@ -148,14 +166,15 @@ const updateBoard = (req, res, next) => {
     db.prepare(
       `UPDATE boards
        SET name = ?, icon = ?, iconName = ?, background = ?, updatedAt = ?
-       WHERE id = ?`
+       WHERE id = ? AND userId = ?`
     ).run(
       nextBoard.name,
       nextBoard.icon,
       nextBoard.iconName,
       nextBoard.background,
       nextBoard.updatedAt,
-      boardId
+      boardId,
+      userId
     );
 
     res.json({
@@ -171,8 +190,12 @@ const updateBoard = (req, res, next) => {
 const deleteBoard = (req, res, next) => {
   try {
     const boardId = Number(req.params.boardId);
+    const userId = req.user?.id;
+    if (!userId) {
+      throw badRequest('Kullanıcı bilgisi eksik');
+    }
     const db = getDB();
-    const result = db.prepare('DELETE FROM boards WHERE id = ?').run(boardId);
+    const result = db.prepare('DELETE FROM boards WHERE id = ? AND userId = ?').run(boardId, userId);
     if (!result.changes) {
       throw notFound('Board bulunamadı');
     }
@@ -185,22 +208,21 @@ const deleteBoard = (req, res, next) => {
 const updateBoardBackground = (req, res, next) => {
   try {
     const boardId = Number(req.params.boardId);
+    const userId = req.user?.id;
+    if (!userId) {
+      throw badRequest('Kullanıcı bilgisi eksik');
+    }
     const { background = '' } = req.body || {};
     const db = getDB();
 
-    const existing = db
-      .prepare('SELECT * FROM boards WHERE id = ?')
-      .get(boardId);
-    if (!existing) {
-      throw notFound('Board bulunamadı');
-    }
+    const existing = ensureBoardForUser(boardId, userId);
 
     const updatedAt = now();
     db.prepare(
       `UPDATE boards
        SET background = ?, updatedAt = ?
-       WHERE id = ?`
-    ).run(background, updatedAt, boardId);
+       WHERE id = ? AND userId = ?`
+    ).run(background, updatedAt, boardId, userId);
 
     res.json({
       id: boardId,
@@ -216,8 +238,9 @@ const updateBoardBackground = (req, res, next) => {
   }
 };
 
-const ensureBoardAndColumn = (boardId, columnId) => {
+const ensureBoardAndColumn = (boardId, columnId, userId) => {
   const db = getDB();
+  ensureBoardForUser(boardId, userId);
   const column = db
     .prepare('SELECT * FROM boardColumns WHERE id = ? AND boardId = ?')
     .get(columnId, boardId);
@@ -230,18 +253,17 @@ const ensureBoardAndColumn = (boardId, columnId) => {
 const createColumn = (req, res, next) => {
   try {
     const boardId = Number(req.params.boardId);
+    const userId = req.user?.id;
+    if (!userId) {
+      throw badRequest('Kullanıcı bilgisi eksik');
+    }
     const { title } = req.body || {};
     if (!title || !title.trim()) {
       throw badRequest('Sütun başlığı zorunludur');
     }
 
     const db = getDB();
-    const boardExists = db
-      .prepare('SELECT id FROM boards WHERE id = ?')
-      .get(boardId);
-    if (!boardExists) {
-      throw notFound('Board bulunamadı');
-    }
+    ensureBoardForUser(boardId, userId);
 
     const timestamp = now();
     const result = db
@@ -269,12 +291,16 @@ const updateColumn = (req, res, next) => {
   try {
     const boardId = Number(req.params.boardId);
     const columnId = Number(req.params.columnId);
+    const userId = req.user?.id;
+    if (!userId) {
+      throw badRequest('Kullanıcı bilgisi eksik');
+    }
     const { title } = req.body || {};
     if (!title || !title.trim()) {
       throw badRequest('Sütun başlığı zorunludur');
     }
 
-    const column = ensureBoardAndColumn(boardId, columnId);
+    const column = ensureBoardAndColumn(boardId, columnId, userId);
     const db = getDB();
     const updatedAt = now();
 
@@ -298,7 +324,11 @@ const deleteColumn = (req, res, next) => {
   try {
     const boardId = Number(req.params.boardId);
     const columnId = Number(req.params.columnId);
-    ensureBoardAndColumn(boardId, columnId);
+    const userId = req.user?.id;
+    if (!userId) {
+      throw badRequest('Kullanıcı bilgisi eksik');
+    }
+    ensureBoardAndColumn(boardId, columnId, userId);
 
     const db = getDB();
     db.prepare('DELETE FROM boardColumns WHERE id = ? AND boardId = ?').run(columnId, boardId);
@@ -312,12 +342,16 @@ const createCard = (req, res, next) => {
   try {
     const boardId = Number(req.params.boardId);
     const columnId = Number(req.params.columnId);
+    const userId = req.user?.id;
+    if (!userId) {
+      throw badRequest('Kullanıcı bilgisi eksik');
+    }
     const { title, description = '', priority = 'without', deadline = null } = req.body || {};
     if (!title || !title.trim()) {
       throw badRequest('Kart başlığı zorunludur');
     }
 
-    ensureBoardAndColumn(boardId, columnId);
+    ensureBoardAndColumn(boardId, columnId, userId);
     const db = getDB();
     const timestamp = now();
 
@@ -348,9 +382,13 @@ const updateCard = (req, res, next) => {
     const boardId = Number(req.params.boardId);
     const columnId = Number(req.params.columnId);
     const cardId = Number(req.params.cardId);
+    const userId = req.user?.id;
+    if (!userId) {
+      throw badRequest('Kullanıcı bilgisi eksik');
+    }
     const { title, description, priority, deadline } = req.body || {};
 
-    ensureBoardAndColumn(boardId, columnId);
+    ensureBoardAndColumn(boardId, columnId, userId);
     const db = getDB();
     const existing = db
       .prepare('SELECT * FROM cards WHERE id = ? AND columnId = ?')
@@ -397,8 +435,12 @@ const deleteCard = (req, res, next) => {
     const boardId = Number(req.params.boardId);
     const columnId = Number(req.params.columnId);
     const cardId = Number(req.params.cardId);
+    const userId = req.user?.id;
+    if (!userId) {
+      throw badRequest('Kullanıcı bilgisi eksik');
+    }
 
-    ensureBoardAndColumn(boardId, columnId);
+    ensureBoardAndColumn(boardId, columnId, userId);
     const db = getDB();
 
     const result = db
@@ -417,13 +459,17 @@ const deleteCard = (req, res, next) => {
 const moveCard = (req, res, next) => {
   try {
     const boardId = Number(req.params.boardId);
+    const userId = req.user?.id;
+    if (!userId) {
+      throw badRequest('Kullanıcı bilgisi eksik');
+    }
     const { fromColumnId, toColumnId, cardId } = req.body || {};
     if (!fromColumnId || !toColumnId || !cardId) {
       throw badRequest('fromColumnId, toColumnId ve cardId zorunludur');
     }
 
-    ensureBoardAndColumn(boardId, fromColumnId);
-    ensureBoardAndColumn(boardId, toColumnId);
+    ensureBoardAndColumn(boardId, fromColumnId, userId);
+    ensureBoardAndColumn(boardId, toColumnId, userId);
 
     const db = getDB();
     const existing = db

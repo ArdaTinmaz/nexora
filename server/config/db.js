@@ -27,12 +27,14 @@ const createTables = (db) => {
 
     CREATE TABLE IF NOT EXISTS boards (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
+      userId INTEGER,
       name TEXT NOT NULL,
       icon TEXT DEFAULT 'project',
       iconName TEXT DEFAULT 'icon-Project',
       background TEXT DEFAULT '',
       createdAt INTEGER NOT NULL,
-      updatedAt INTEGER NOT NULL
+      updatedAt INTEGER NOT NULL,
+      FOREIGN KEY (userId) REFERENCES users(id) ON DELETE CASCADE
     );
 
     CREATE TABLE IF NOT EXISTS boardColumns (
@@ -84,6 +86,18 @@ const createTables = (db) => {
   }
   if (!hasColumn('emailVerificationTokenExpiry')) {
     addColumn('ALTER TABLE users ADD COLUMN emailVerificationTokenExpiry INTEGER;');
+  }
+
+  // Add missing userId to boards for backwards compatibility
+  const boardColumns = db.prepare('PRAGMA table_info(boards)').all();
+  const boardHasColumn = (name) => boardColumns.some((col) => col.name === name);
+  if (!boardHasColumn('userId')) {
+    addColumn('ALTER TABLE boards ADD COLUMN userId INTEGER;');
+    try {
+      db.exec('CREATE INDEX IF NOT EXISTS idx_boards_userId ON boards(userId);');
+    } catch (err) {
+      // ignore if index already exists
+    }
   }
 };
 

@@ -1,7 +1,10 @@
 const express = require('express');
 const boardController = require('../controllers/boardController');
+const authMiddleware = require('../middleware/authMiddleware');
 
 const router = express.Router();
+
+router.use(authMiddleware);
 
 router
   .route('/')
