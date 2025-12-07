@@ -1,0 +1,222 @@
+.welcomePage {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background: linear-gradient(180deg, #ffffff 0%, #ffffff 25%, #f8fbf8 40%, #eef6ee 55%, #e4f3e4 65%, #d7ebd7 75%, #cae3ca 85%, #bfe0b8 92%, #b7dcae 97%, #bedbb0 100%);
+}
+
+.welcomeContent {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  max-width: 600px;
+  width: 100%;
+}
+
+.illustration {
+  margin-bottom: 40px;
+  width: 162px;
+  height: 162px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+.illustrationImage {
+  width: 162px;
+  height: 162px;
+  object-fit: contain;
+}
+
+.logoContainer {
+  margin-bottom: 24px;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+}
+
+.lightningIcon {
+  width: 48px;
+  height: 48px;
+  flex-shrink: 0;
+}
+
+.logoText {
+  font-family: var(--font-family);
+  font-weight: 600;
+  font-size: 40px;
+  letter-spacing: -0.04em;
+  color: #161616;
+}
+
+.tagline {
+  font-family: var(--font-family);
+  font-weight: 400;
+  font-size: 14px;
+  line-height: 129%;
+  letter-spacing: -0.02em;
+  text-align: center;
+  color: #161616;
+  margin-bottom: 40px;
+  max-width: 500px;
+}
+
+.btnRegistration {
+  background-color: var(--dark-bg);
+  color: var(--text-white);
+  border-radius: 8px;
+  width: 344px;
+  height: 49px;
+  font-size: 16px;
+  font-weight: 500;
+  margin-bottom: 16px;
+  transition: background-color 0.2s ease;
+  padding: 0;
+}
+
+.btnRegistration:hover {
+  background-color: var(--dark-bg-alt);
+}
+
+.linkLogin {
+  background: none;
+  font-family: var(--font-family);
+  font-weight: 500;
+  font-size: 14px;
+  letter-spacing: -0.02em;
+  color: #161616;
+  padding: 0;
+  text-decoration: none;
+  transition: color 0.2s ease;
+  border: none;
+  cursor: pointer;
+}
+
+.linkLogin:hover {
+  opacity: 0.8;
+}
+
+/* Mobile: 320px+ */
+@media (min-width: 320px) {
+  .welcomeContent {
+    padding: 20px;
+  }
+
+  .illustration {
+    width: 120px;
+    height: 120px;
+  }
+
+  .illustrationImage {
+    width: 120px;
+    height: 120px;
+  }
+
+  .logoContainer {
+    gap: 8px;
+  }
+
+  .lightningIcon {
+    width: 32px;
+    height: 32px;
+  }
+
+  .logoText {
+    font-size: 28px;
+  }
+
+  .btnRegistration {
+    width: 100%;
+    max-width: 344px;
+    height: 45px;
+  }
+}
+
+/* Mobile: 375px+ */
+@media (min-width: 375px) {
+  .illustration {
+    width: 140px;
+    height: 140px;
+  }
+
+  .illustrationImage {
+    width: 140px;
+    height: 140px;
+  }
+
+  .logoContainer {
+    gap: 10px;
+  }
+
+  .lightningIcon {
+    width: 40px;
+    height: 40px;
+  }
+
+  .logoText {
+    font-size: 32px;
+  }
+
+  .btnRegistration {
+    height: 47px;
+  }
+}
+
+/* Tablet: 768px+ */
+@media (min-width: 768px) {
+  .illustration {
+    width: 162px;
+    height: 162px;
+  }
+
+  .illustrationImage {
+    width: 162px;
+    height: 162px;
+  }
+
+  .lightningIcon {
+    width: 48px;
+    height: 48px;
+  }
+
+  .logoText {
+    font-size: 40px;
+  }
+
+  .btnRegistration {
+    width: 344px;
+    height: 49px;
+  }
+}
+
+/* Desktop: 1440px+ */
+@media (min-width: 1440px) {
+  .welcomeContent {
+    max-width: 700px;
+  }
+
+  .illustration {
+    width: 162px;
+    height: 162px;
+  }
+
+  .illustrationImage {
+    width: 162px;
+    height: 162px;
+  }
+
+  .lightningIcon {
+    width: 48px;
+    height: 48px;
+  }
+
+  .logoText {
+    font-size: 40px;
+  }
+}
+

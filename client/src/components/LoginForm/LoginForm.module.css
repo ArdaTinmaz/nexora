@@ -1,0 +1,152 @@
+.loginForm {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.formGroup {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.formInput {
+  background-color: var(--dark-bg-alt);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  padding: 14px 18px;
+  color: var(--text-white);
+  font-size: 16px;
+  width: 100%;
+  transition: border-color 0.2s ease;
+}
+
+.formInput::placeholder {
+  color: var(--text-secondary);
+}
+
+.formInput:focus {
+  border-color: var(--accent-green);
+}
+
+.formInputError {
+  border-color: var(--error-color);
+}
+
+.passwordInputWrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.passwordInputWrapper .formInput {
+  padding-right: 50px;
+}
+
+.passwordToggle {
+  position: absolute;
+  right: 14px;
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+  padding: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: color 0.2s ease;
+}
+
+.passwordToggle:hover {
+  color: var(--text-white);
+}
+
+.eyeIcon {
+  width: 20px;
+  height: 20px;
+  stroke: currentColor;
+  fill: none;
+}
+
+.errorMessage {
+  color: var(--error-color);
+  font-size: 12px;
+  margin-top: 4px;
+}
+
+.submitError {
+  color: var(--error-color);
+  font-size: 14px;
+  text-align: center;
+  margin-top: -8px;
+}
+
+.forgotPasswordButton {
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  text-decoration: underline;
+  cursor: pointer;
+  align-self: center;
+  font-size: 14px;
+  margin-top: 8px;
+}
+
+.forgotPasswordButton:hover {
+  color: var(--text-white);
+}
+
+.btnSubmit {
+  background-color: var(--accent-green);
+  color: var(--text-primary);
+  padding: 14px;
+  border-radius: 8px;
+  font-size: 16px;
+  font-weight: 500;
+  margin-top: 8px;
+  transition: background-color 0.2s ease;
+  width: 100%;
+}
+
+.btnSubmit:hover:not(:disabled) {
+  background-color: var(--accent-green-light);
+}
+
+.btnSubmit:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* Mobile: 320px+ */
+@media (min-width: 320px) {
+  .loginForm {
+    gap: 20px;
+  }
+
+  .formInput {
+    padding: 12px 16px;
+    font-size: 14px;
+  }
+
+  .btnSubmit {
+    padding: 12px;
+    font-size: 14px;
+  }
+}
+
+/* Tablet: 768px+ */
+@media (min-width: 768px) {
+  .loginForm {
+    gap: 24px;
+  }
+
+  .formInput {
+    padding: 14px 18px;
+    font-size: 16px;
+  }
+
+  .btnSubmit {
+    padding: 14px;
+    font-size: 16px;
+  }
+}

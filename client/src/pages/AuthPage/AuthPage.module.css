@@ -1,0 +1,91 @@
+.authPage {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background: linear-gradient(180deg, #ffffff 0%, #ffffff 25%, #f8fbf8 40%, #eef6ee 55%, #e4f3e4 65%, #d7ebd7 75%, #cae3ca 85%, #bfe0b8 92%, #b7dcae 97%, #bedbb0 100%);
+}
+
+.authContainer {
+  background-color: var(--dark-bg);
+  border-radius: 8px;
+  padding: 40px;
+  width: 100%;
+  max-width: 424px;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+}
+
+.authTabs {
+  display: flex;
+  gap: 24px;
+  margin-bottom: 40px;
+}
+
+.authTab {
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  font-size: 18px;
+  font-weight: 500;
+  padding: 0;
+  cursor: pointer;
+  transition: color 0.2s ease;
+}
+
+.authTabActive {
+  color: var(--text-white);
+  font-weight: 600;
+}
+
+.authTab:hover {
+  color: var(--text-white);
+}
+
+/* Mobile: 320px+ */
+@media (min-width: 320px) {
+  .authContainer {
+    padding: 24px;
+    max-width: 100%;
+  }
+
+  .authTabs {
+    gap: 16px;
+    margin-bottom: 32px;
+  }
+
+  .authTab {
+    font-size: 16px;
+  }
+}
+
+/* Mobile: 375px+ */
+@media (min-width: 375px) {
+  .authContainer {
+    padding: 32px;
+  }
+}
+
+/* Tablet: 768px+ */
+@media (min-width: 768px) {
+  .authContainer {
+    padding: 40px;
+    max-width: 424px;
+  }
+
+  .authTabs {
+    gap: 24px;
+  }
+
+  .authTab {
+    font-size: 18px;
+  }
+}
+
+/* Desktop: 1440px+ */
+@media (min-width: 1440px) {
+  .authContainer {
+    padding: 48px;
+  }
+}
+

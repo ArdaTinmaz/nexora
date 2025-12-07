@@ -1,0 +1,244 @@
+.overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.modal {
+  background-color: #151515;
+  border: 1px solid #2f3b28;
+  border-radius: 8px;
+  padding: 24px;
+  width: 350px;
+  max-height: 90vh;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+}
+
+.header {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 24px;
+  flex-shrink: 0;
+  position: relative;
+}
+
+.headerLabel {
+  font-family: var(--font-family);
+  font-weight: 500;
+  font-size: 12px;
+  letter-spacing: -0.02em;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+}
+
+.title {
+  font-family: var(--font-family);
+  font-weight: 500;
+  font-size: 18px;
+  letter-spacing: -0.02em;
+  color: var(--text-white);
+  margin: 0;
+}
+
+.closeBtn {
+  position: absolute;
+  top: 0;
+  right: 0;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-white);
+  transition: opacity 0.2s ease;
+}
+
+.closeBtn:hover {
+  opacity: 0.7;
+}
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.inputGroup {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.label {
+  font-family: var(--font-family);
+  font-weight: 500;
+  font-size: 14px;
+  letter-spacing: -0.02em;
+  color: var(--text-white);
+}
+
+.input,
+.textarea {
+  width: 100%;
+  padding: 14px;
+  background-color: #1F1F1F;
+  border: 1px solid #2f3b28;
+  border-radius: 8px;
+  font-family: var(--font-family);
+  font-weight: 400;
+  font-size: 14px;
+  letter-spacing: -0.02em;
+  color: var(--text-white);
+  outline: none;
+  transition: border-color 0.2s ease;
+  resize: vertical;
+}
+
+.input:focus,
+.textarea:focus {
+  border-color: var(--accent-green);
+}
+
+.input::placeholder,
+.textarea::placeholder {
+  color: var(--text-secondary);
+}
+
+.inputError {
+  border-color: var(--error-color);
+}
+
+.errorText {
+  font-family: var(--font-family);
+  font-weight: 400;
+  font-size: 12px;
+  color: var(--error-color);
+}
+
+.textarea {
+  min-height: 100px;
+}
+
+.priorityList {
+  display: flex;
+  gap: 8px;
+}
+
+.priorityBtn {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: 2px solid transparent;
+  cursor: pointer;
+  padding: 0;
+  background: transparent;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+}
+
+.priorityBtn:hover {
+  border-color: rgba(255, 255, 255, 0.3);
+}
+
+.priorityBtn.selected {
+  border-color: var(--accent-green);
+}
+
+.priorityCircle {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+}
+
+.dateInputWrapper {
+  position: relative;
+}
+
+.dateInput {
+  width: 100%;
+  padding: 14px;
+  background-color: #1F1F1F;
+  border: 1px solid #2f3b28;
+  border-radius: 8px;
+  font-family: var(--font-family);
+  font-weight: 400;
+  font-size: 14px;
+  letter-spacing: -0.02em;
+  color: var(--text-white);
+  outline: none;
+  transition: border-color 0.2s ease;
+}
+
+.dateInput:focus {
+  border-color: var(--accent-green);
+}
+
+.dateInput::-webkit-calendar-picker-indicator {
+  filter: invert(1);
+  cursor: pointer;
+}
+
+.dateDisplay {
+  font-family: var(--font-family);
+  font-weight: 400;
+  font-size: 14px;
+  color: var(--text-secondary);
+  margin-top: 4px;
+}
+
+.submitBtn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 14px;
+  background-color: var(--accent-green);
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: opacity 0.2s ease;
+}
+
+.submitBtn:hover {
+  opacity: 0.9;
+}
+
+.plusIconContainer {
+  width: 20px;
+  height: 20px;
+  background-color: #000;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.plusIcon {
+  width: 16px;
+  height: 16px;
+  stroke: #fff;
+  fill: none;
+}
+
+.submitText {
+  font-family: var(--font-family);
+  font-weight: 500;
+  font-size: 14px;
+  letter-spacing: -0.02em;
+  color: #000;
+}
+
