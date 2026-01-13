@@ -5,6 +5,7 @@ import Sidebar from '../../components/Sidebar/Sidebar';
 import Header from '../../components/Header/Header';
 import ScreensPage from '../ScreensPage/ScreensPage';
 import { boardApi } from '../../api/boardApi';
+import ChatWidgetLite from '../../realtime/ChatWidgetLite';
 
 function HomePage() {
   const location = useLocation();
@@ -91,6 +92,7 @@ function HomePage() {
           </Routes>
         </div>
       </main>
+      <ChatWidgetLite />
     </div>
   );
 }
