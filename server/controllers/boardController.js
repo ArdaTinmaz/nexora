@@ -1,4 +1,7 @@
-const { getDB } = require('../config/db');
+const mongoose = require('mongoose');
+const Board = require('../models/Board');
+const BoardColumn = require('../models/BoardColumn');
+const Card = require('../models/Card');
 
 const now = () => Date.now();
 
@@ -14,21 +17,45 @@ const badRequest = (message) => {
   return error;
 };
 
-const mapBoard = (row) => ({
-  id: row.id,
-  name: row.name,
-  icon: row.icon,
-  iconName: row.iconName,
-  background: row.background,
-  createdAt: row.createdAt,
-  updatedAt: row.updatedAt,
+const toObjectId = (value, message) => {
+  if (!mongoose.Types.ObjectId.isValid(value)) {
+    throw badRequest(message);
+  }
+  return new mongoose.Types.ObjectId(value);
+};
+
+const mapBoard = (doc) => ({
+  id: doc._id.toString(),
+  name: doc.name,
+  icon: doc.icon,
+  iconName: doc.iconName,
+  background: doc.background,
+  createdAt: doc.createdAt,
+  updatedAt: doc.updatedAt,
 });
 
-const ensureBoardForUser = (boardId, userId) => {
-  const db = getDB();
-  const board = db
-    .prepare('SELECT * FROM boards WHERE id = ? AND userId = ?')
-    .get(boardId, userId);
+const mapColumn = (doc) => ({
+  id: doc._id.toString(),
+  boardId: doc.boardId.toString(),
+  title: doc.title,
+  position: doc.position,
+  createdAt: doc.createdAt,
+  updatedAt: doc.updatedAt,
+});
+
+const mapCard = (doc) => ({
+  id: doc._id.toString(),
+  columnId: doc.columnId.toString(),
+  title: doc.title,
+  description: doc.description,
+  priority: doc.priority,
+  deadline: doc.deadline,
+  createdAt: doc.createdAt,
+  updatedAt: doc.updatedAt,
+});
+
+const ensureBoardForUser = async (boardId, userId) => {
+  const board = await Board.findOne({ _id: boardId, userId }).lean();
 
   if (!board) {
     throw notFound('Board bulunamadı');
@@ -37,29 +64,34 @@ const ensureBoardForUser = (boardId, userId) => {
   return board;
 };
 
-const getBoards = (req, res, next) => {
+const ensureBoardAndColumn = async (boardId, columnId, userId) => {
+  await ensureBoardForUser(boardId, userId);
+  const column = await BoardColumn.findOne({ _id: columnId, boardId }).lean();
+  if (!column) {
+    throw notFound('Sütun bulunamadı');
+  }
+  return column;
+};
+
+const getBoards = async (req, res, next) => {
   try {
     const userId = req.user?.id;
     if (!userId) {
       throw badRequest('Kullanıcı bilgisi eksik');
     }
 
-    const db = getDB();
-    const rows = db
-      .prepare(
-        `SELECT id, name, icon, iconName, background, createdAt, updatedAt
-         FROM boards
-         WHERE userId = ?
-         ORDER BY createdAt ASC`
-      )
-      .all(userId);
-    res.json(rows.map(mapBoard));
+    const userObjectId = toObjectId(userId, 'Geçersiz kullanıcı');
+    const boards = await Board.find({ userId: userObjectId })
+      .sort({ createdAt: 1 })
+      .lean();
+
+    res.json(boards.map(mapBoard));
   } catch (error) {
     next(error);
   }
 };
 
-const createBoard = (req, res, next) => {
+const createBoard = async (req, res, next) => {
   try {
     const userId = req.user?.id;
     if (!userId) {
@@ -71,18 +103,9 @@ const createBoard = (req, res, next) => {
       throw badRequest('Board adı zorunludur');
     }
 
-    const db = getDB();
     const timestamp = now();
-    const result = db
-      .prepare(
-        `INSERT INTO boards (userId, name, icon, iconName, background, createdAt, updatedAt)
-         VALUES (?, ?, ?, ?, ?, ?, ?)`
-      )
-      .run(userId, name.trim(), icon, iconName, background, timestamp, timestamp);
-
-    const board = mapBoard({
-      id: result.lastInsertRowid,
-      userId,
+    const board = await Board.create({
+      userId: toObjectId(userId, 'Geçersiz kullanıcı'),
       name: name.trim(),
       icon,
       iconName,
@@ -91,47 +114,42 @@ const createBoard = (req, res, next) => {
       updatedAt: timestamp,
     });
 
-    res.status(201).json(board);
+    res.status(201).json(mapBoard(board));
   } catch (error) {
     next(error);
   }
 };
 
-const getBoard = (req, res, next) => {
+const getBoard = async (req, res, next) => {
   try {
-    const boardId = Number(req.params.boardId);
+    const boardId = toObjectId(req.params.boardId, 'Geçersiz board');
     const userId = req.user?.id;
     if (!userId) {
       throw badRequest('Kullanıcı bilgisi eksik');
     }
-    const db = getDB();
 
-    const boardRow = ensureBoardForUser(boardId, userId);
+    const userObjectId = toObjectId(userId, 'Geçersiz kullanıcı');
+    const boardRow = await ensureBoardForUser(boardId, userObjectId);
 
-    const columns = db
-      .prepare(
-        `SELECT id, boardId, title, position, createdAt, updatedAt
-         FROM boardColumns
-         WHERE boardId = ?
-         ORDER BY position ASC, id ASC`
-      )
-      .all(boardId);
+    const columns = await BoardColumn.find({ boardId })
+      .sort({ position: 1, _id: 1 })
+      .lean();
 
-    const columnIds = columns.map((c) => c.id);
+    const columnIds = columns.map((column) => column._id);
     const cards = columnIds.length
-      ? db
-          .prepare(
-            `SELECT id, columnId, title, description, priority, deadline, createdAt, updatedAt
-             FROM cards
-             WHERE columnId IN (${columnIds.map(() => '?').join(',')})
-             ORDER BY id ASC`
-          )
-          .all(...columnIds)
+      ? await Card.find({ columnId: { $in: columnIds } }).sort({ _id: 1 }).lean()
       : [];
 
+    const cardsByColumn = cards.reduce((acc, card) => {
+      const key = card.columnId.toString();
+      if (!acc[key]) acc[key] = [];
+      acc[key].push(mapCard(card));
+      return acc;
+    }, {});
+
     const columnsWithCards = columns.map((column) => ({
-      ...column,
-      cards: cards.filter((card) => card.columnId === column.id),
+      ...mapColumn(column),
+      cards: cardsByColumn[column._id.toString()] || [],
     }));
 
     res.json({
@@ -143,17 +161,17 @@ const getBoard = (req, res, next) => {
   }
 };
 
-const updateBoard = (req, res, next) => {
+const updateBoard = async (req, res, next) => {
   try {
-    const boardId = Number(req.params.boardId);
+    const boardId = toObjectId(req.params.boardId, 'Geçersiz board');
     const userId = req.user?.id;
     if (!userId) {
       throw badRequest('Kullanıcı bilgisi eksik');
     }
     const { name, icon, iconName, background } = req.body || {};
-    const db = getDB();
+    const userObjectId = toObjectId(userId, 'Geçersiz kullanıcı');
 
-    const existing = ensureBoardForUser(boardId, userId);
+    const existing = await ensureBoardForUser(boardId, userObjectId);
 
     const nextBoard = {
       name: name?.trim() || existing.name,
@@ -163,96 +181,81 @@ const updateBoard = (req, res, next) => {
       updatedAt: now(),
     };
 
-    db.prepare(
-      `UPDATE boards
-       SET name = ?, icon = ?, iconName = ?, background = ?, updatedAt = ?
-       WHERE id = ? AND userId = ?`
-    ).run(
-      nextBoard.name,
-      nextBoard.icon,
-      nextBoard.iconName,
-      nextBoard.background,
-      nextBoard.updatedAt,
-      boardId,
-      userId
-    );
+    const updated = await Board.findOneAndUpdate(
+      { _id: boardId, userId: userObjectId },
+      nextBoard,
+      { new: true }
+    ).lean();
+
+    if (!updated) {
+      throw notFound('Board bulunamadı');
+    }
 
     res.json({
-      id: boardId,
-      ...nextBoard,
-      createdAt: existing.createdAt,
+      ...mapBoard(updated),
     });
   } catch (error) {
     next(error);
   }
 };
 
-const deleteBoard = (req, res, next) => {
+const deleteBoard = async (req, res, next) => {
   try {
-    const boardId = Number(req.params.boardId);
+    const boardId = toObjectId(req.params.boardId, 'Geçersiz board');
     const userId = req.user?.id;
     if (!userId) {
       throw badRequest('Kullanıcı bilgisi eksik');
     }
-    const db = getDB();
-    const result = db.prepare('DELETE FROM boards WHERE id = ? AND userId = ?').run(boardId, userId);
-    if (!result.changes) {
+
+    const userObjectId = toObjectId(userId, 'Geçersiz kullanıcı');
+    const board = await Board.findOneAndDelete({ _id: boardId, userId: userObjectId }).lean();
+    if (!board) {
       throw notFound('Board bulunamadı');
     }
+
+    const columns = await BoardColumn.find({ boardId }).select('_id').lean();
+    const columnIds = columns.map((column) => column._id);
+    if (columnIds.length) {
+      await Card.deleteMany({ columnId: { $in: columnIds } });
+      await BoardColumn.deleteMany({ _id: { $in: columnIds } });
+    }
+
     res.status(204).end();
   } catch (error) {
     next(error);
   }
 };
 
-const updateBoardBackground = (req, res, next) => {
+const updateBoardBackground = async (req, res, next) => {
   try {
-    const boardId = Number(req.params.boardId);
+    const boardId = toObjectId(req.params.boardId, 'Geçersiz board');
     const userId = req.user?.id;
     if (!userId) {
       throw badRequest('Kullanıcı bilgisi eksik');
     }
     const { background = '' } = req.body || {};
-    const db = getDB();
-
-    const existing = ensureBoardForUser(boardId, userId);
+    const userObjectId = toObjectId(userId, 'Geçersiz kullanıcı');
 
     const updatedAt = now();
-    db.prepare(
-      `UPDATE boards
-       SET background = ?, updatedAt = ?
-       WHERE id = ? AND userId = ?`
-    ).run(background, updatedAt, boardId, userId);
+    const updated = await Board.findOneAndUpdate(
+      { _id: boardId, userId: userObjectId },
+      { background, updatedAt },
+      { new: true }
+    ).lean();
 
-    res.json({
-      id: boardId,
-      name: existing.name,
-      icon: existing.icon,
-      iconName: existing.iconName,
-      background,
-      createdAt: existing.createdAt,
-      updatedAt,
-    });
+    if (!updated) {
+      throw notFound('Board bulunamadı');
+    }
+
+    res.json(mapBoard(updated));
   } catch (error) {
     next(error);
   }
 };
 
-const ensureBoardAndColumn = (boardId, columnId, userId) => {
-  const db = getDB();
-  ensureBoardForUser(boardId, userId);
-  const column = db
-    .prepare('SELECT * FROM boardColumns WHERE id = ? AND boardId = ?')
-    .get(columnId, boardId);
-  if (!column) {
-    throw notFound('Sütun bulunamadı');
-  }
-  return column;
-};
-
-const createColumn = (req, res, next) => {
+const createColumn = async (req, res, next) => {
   try {
-    const boardId = Number(req.params.boardId);
+    const boardId = toObjectId(req.params.boardId, 'Geçersiz board');
     const userId = req.user?.id;
     if (!userId) {
       throw badRequest('Kullanıcı bilgisi eksik');
@@ -262,24 +265,20 @@ const createColumn = (req, res, next) => {
       throw badRequest('Sütun başlığı zorunludur');
     }
 
-    const db = getDB();
-    ensureBoardForUser(boardId, userId);
+    const userObjectId = toObjectId(userId, 'Geçersiz kullanıcı');
+    await ensureBoardForUser(boardId, userObjectId);
 
     const timestamp = now();
-    const result = db
-      .prepare(
-        `INSERT INTO boardColumns (boardId, title, position, createdAt, updatedAt)
-         VALUES (?, ?, ?, ?, ?)`
-      )
-      .run(boardId, title.trim(), 0, timestamp, timestamp);
-
-    res.status(201).json({
-      id: result.lastInsertRowid,
+    const column = await BoardColumn.create({
       boardId,
       title: title.trim(),
       position: 0,
       createdAt: timestamp,
       updatedAt: timestamp,
+    });
+
+    res.status(201).json({
+      ...mapColumn(column),
       cards: [],
     });
   } catch (error) {
@@ -287,10 +286,10 @@ const createColumn = (req, res, next) => {
   }
 };
 
-const updateColumn = (req, res, next) => {
+const updateColumn = async (req, res, next) => {
   try {
-    const boardId = Number(req.params.boardId);
-    const columnId = Number(req.params.columnId);
+    const boardId = toObjectId(req.params.boardId, 'Geçersiz board');
+    const columnId = toObjectId(req.params.columnId, 'Geçersiz sütun');
     const userId = req.user?.id;
     if (!userId) {
       throw badRequest('Kullanıcı bilgisi eksik');
@@ -300,48 +299,55 @@ const updateColumn = (req, res, next) => {
       throw badRequest('Sütun başlığı zorunludur');
     }
 
-    const column = ensureBoardAndColumn(boardId, columnId, userId);
-    const db = getDB();
+    const userObjectId = toObjectId(userId, 'Geçersiz kullanıcı');
+    await ensureBoardForUser(boardId, userObjectId);
+
     const updatedAt = now();
+    const column = await BoardColumn.findOneAndUpdate(
+      { _id: columnId, boardId },
+      { title: title.trim(), updatedAt },
+      { new: true }
+    ).lean();
 
-    db.prepare(
-      `UPDATE boardColumns
-       SET title = ?, updatedAt = ?
-       WHERE id = ? AND boardId = ?`
-    ).run(title.trim(), updatedAt, columnId, boardId);
+    if (!column) {
+      throw notFound('Sütun bulunamadı');
+    }
 
-    res.json({
-      ...column,
-      title: title.trim(),
-      updatedAt,
-    });
+    res.json(mapColumn(column));
   } catch (error) {
     next(error);
   }
 };
 
-const deleteColumn = (req, res, next) => {
+const deleteColumn = async (req, res, next) => {
   try {
-    const boardId = Number(req.params.boardId);
-    const columnId = Number(req.params.columnId);
+    const boardId = toObjectId(req.params.boardId, 'Geçersiz board');
+    const columnId = toObjectId(req.params.columnId, 'Geçersiz sütun');
     const userId = req.user?.id;
     if (!userId) {
       throw badRequest('Kullanıcı bilgisi eksik');
     }
-    ensureBoardAndColumn(boardId, columnId, userId);
 
-    const db = getDB();
-    db.prepare('DELETE FROM boardColumns WHERE id = ? AND boardId = ?').run(columnId, boardId);
+    const userObjectId = toObjectId(userId, 'Geçersiz kullanıcı');
+    await ensureBoardForUser(boardId, userObjectId);
+
+    const column = await BoardColumn.findOneAndDelete({ _id: columnId, boardId }).lean();
+    if (!column) {
+      throw notFound('Sütun bulunamadı');
+    }
+
+    await Card.deleteMany({ columnId });
+
     res.status(204).end();
   } catch (error) {
     next(error);
   }
 };
 
-const createCard = (req, res, next) => {
+const createCard = async (req, res, next) => {
   try {
-    const boardId = Number(req.params.boardId);
-    const columnId = Number(req.params.columnId);
+    const boardId = toObjectId(req.params.boardId, 'Geçersiz board');
+    const columnId = toObjectId(req.params.columnId, 'Geçersiz sütun');
     const userId = req.user?.id;
     if (!userId) {
       throw badRequest('Kullanıcı bilgisi eksik');
@@ -351,19 +357,11 @@ const createCard = (req, res, next) => {
       throw badRequest('Kart başlığı zorunludur');
     }
 
-    ensureBoardAndColumn(boardId, columnId, userId);
-    const db = getDB();
+    const userObjectId = toObjectId(userId, 'Geçersiz kullanıcı');
+    await ensureBoardAndColumn(boardId, columnId, userObjectId);
+
     const timestamp = now();
-
-    const result = db
-      .prepare(
-        `INSERT INTO cards (columnId, title, description, priority, deadline, createdAt, updatedAt)
-         VALUES (?, ?, ?, ?, ?, ?, ?)`
-      )
-      .run(columnId, title.trim(), description, priority, deadline, timestamp, timestamp);
-
-    res.status(201).json({
-      id: result.lastInsertRowid,
+    const card = await Card.create({
       columnId,
       title: title.trim(),
       description,
@@ -372,27 +370,28 @@ const createCard = (req, res, next) => {
       createdAt: timestamp,
       updatedAt: timestamp,
     });
+
+    res.status(201).json(mapCard(card));
   } catch (error) {
     next(error);
   }
 };
 
-const updateCard = (req, res, next) => {
+const updateCard = async (req, res, next) => {
   try {
-    const boardId = Number(req.params.boardId);
-    const columnId = Number(req.params.columnId);
-    const cardId = Number(req.params.cardId);
+    const boardId = toObjectId(req.params.boardId, 'Geçersiz board');
+    const columnId = toObjectId(req.params.columnId, 'Geçersiz sütun');
+    const cardId = toObjectId(req.params.cardId, 'Geçersiz kart');
     const userId = req.user?.id;
     if (!userId) {
       throw badRequest('Kullanıcı bilgisi eksik');
     }
     const { title, description, priority, deadline } = req.body || {};
 
-    ensureBoardAndColumn(boardId, columnId, userId);
-    const db = getDB();
-    const existing = db
-      .prepare('SELECT * FROM cards WHERE id = ? AND columnId = ?')
-      .get(cardId, columnId);
+    const userObjectId = toObjectId(userId, 'Geçersiz kullanıcı');
+    await ensureBoardAndColumn(boardId, columnId, userObjectId);
+
+    const existing = await Card.findOne({ _id: cardId, columnId }).lean();
     if (!existing) {
       throw notFound('Kart bulunamadı');
     }
@@ -405,48 +404,33 @@ const updateCard = (req, res, next) => {
       updatedAt: now(),
     };
 
-    db.prepare(
-      `UPDATE cards
-       SET title = ?, description = ?, priority = ?, deadline = ?, updatedAt = ?
-       WHERE id = ? AND columnId = ?`
-    ).run(
-      updatedCard.title,
-      updatedCard.description,
-      updatedCard.priority,
-      updatedCard.deadline,
-      updatedCard.updatedAt,
-      cardId,
-      columnId
-    );
+    const updated = await Card.findOneAndUpdate(
+      { _id: cardId, columnId },
+      updatedCard,
+      { new: true }
+    ).lean();
 
-    res.json({
-      id: cardId,
-      columnId,
-      createdAt: existing.createdAt,
-      ...updatedCard,
-    });
+    res.json(mapCard(updated));
   } catch (error) {
     next(error);
   }
 };
 
-const deleteCard = (req, res, next) => {
+const deleteCard = async (req, res, next) => {
   try {
-    const boardId = Number(req.params.boardId);
-    const columnId = Number(req.params.columnId);
-    const cardId = Number(req.params.cardId);
+    const boardId = toObjectId(req.params.boardId, 'Geçersiz board');
+    const columnId = toObjectId(req.params.columnId, 'Geçersiz sütun');
+    const cardId = toObjectId(req.params.cardId, 'Geçersiz kart');
     const userId = req.user?.id;
     if (!userId) {
       throw badRequest('Kullanıcı bilgisi eksik');
     }
 
-    ensureBoardAndColumn(boardId, columnId, userId);
-    const db = getDB();
+    const userObjectId = toObjectId(userId, 'Geçersiz kullanıcı');
+    await ensureBoardAndColumn(boardId, columnId, userObjectId);
 
-    const result = db
-      .prepare('DELETE FROM cards WHERE id = ? AND columnId = ?')
-      .run(cardId, columnId);
-    if (!result.changes) {
+    const result = await Card.findOneAndDelete({ _id: cardId, columnId }).lean();
+    if (!result) {
       throw notFound('Kart bulunamadı');
     }
 
@@ -456,9 +440,9 @@ const deleteCard = (req, res, next) => {
   }
 };
 
-const moveCard = (req, res, next) => {
+const moveCard = async (req, res, next) => {
   try {
-    const boardId = Number(req.params.boardId);
+    const boardId = toObjectId(req.params.boardId, 'Geçersiz board');
     const userId = req.user?.id;
     if (!userId) {
       throw badRequest('Kullanıcı bilgisi eksik');
@@ -468,29 +452,27 @@ const moveCard = (req, res, next) => {
       throw badRequest('fromColumnId, toColumnId ve cardId zorunludur');
     }
 
-    ensureBoardAndColumn(boardId, fromColumnId, userId);
-    ensureBoardAndColumn(boardId, toColumnId, userId);
+    const fromColumnObjectId = toObjectId(fromColumnId, 'Geçersiz sütun');
+    const toColumnObjectId = toObjectId(toColumnId, 'Geçersiz sütun');
+    const cardObjectId = toObjectId(cardId, 'Geçersiz kart');
+    const userObjectId = toObjectId(userId, 'Geçersiz kullanıcı');
 
-    const db = getDB();
-    const existing = db
-      .prepare('SELECT * FROM cards WHERE id = ? AND columnId = ?')
-      .get(cardId, fromColumnId);
+    await ensureBoardAndColumn(boardId, fromColumnObjectId, userObjectId);
+    await ensureBoardAndColumn(boardId, toColumnObjectId, userObjectId);
+
+    const existing = await Card.findOne({ _id: cardObjectId, columnId: fromColumnObjectId }).lean();
     if (!existing) {
       throw notFound('Kart bulunamadı');
     }
 
     const updatedAt = now();
-    db.prepare(
-      `UPDATE cards
-       SET columnId = ?, updatedAt = ?
-       WHERE id = ?`
-    ).run(toColumnId, updatedAt, cardId);
+    const updated = await Card.findOneAndUpdate(
+      { _id: cardObjectId },
+      { columnId: toColumnObjectId, updatedAt },
+      { new: true }
+    ).lean();
 
-    res.json({
-      ...existing,
-      columnId: toColumnId,
-      updatedAt,
-    });
+    res.json(mapCard(updated));
   } catch (error) {
     next(error);
   }

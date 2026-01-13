@@ -1,48 +1,92 @@
+const mongoose = require('mongoose');
 const bcrypt = require('bcryptjs');
-const { getDB } = require('../config/db');
 
-const mapUserRow = (row) => {
-  if (!row) {
+const { Schema } = mongoose;
+
+const userSchema = new Schema({
+  name: { type: String, required: true },
+  email: { type: String, required: true, unique: true, index: true },
+  password: { type: String, required: true },
+  avatarURL: { type: String, default: '' },
+  theme: { type: String, enum: ['light', 'dark', 'violet'], default: 'light' },
+  refreshTokenHash: { type: String, default: null },
+  passwordResetTokenHash: { type: String, default: null },
+  passwordResetTokenExpiry: { type: Number, default: null },
+  pendingEmail: { type: String, default: null },
+  emailVerificationTokenHash: { type: String, default: null },
+  emailVerificationTokenExpiry: { type: Number, default: null },
+  createdAt: { type: Number, default: Date.now },
+  updatedAt: { type: Number, default: Date.now },
+});
+
+const User = mongoose.model('User', userSchema);
+
+const mapUserDoc = (doc) => {
+  if (!doc) {
     return null;
   }
 
+  const data = doc.toObject ? doc.toObject() : doc;
+
   return {
-    id: row.id,
-    name: row.name,
-    email: row.email,
-    password: row.password,
-    avatarURL: row.avatarURL || '',
-    theme: row.theme || 'light',
-    refreshTokenHash: row.refreshTokenHash,
-    passwordResetTokenHash: row.passwordResetTokenHash,
-    passwordResetTokenExpiry: row.passwordResetTokenExpiry,
-    pendingEmail: row.pendingEmail,
-    emailVerificationTokenHash: row.emailVerificationTokenHash,
-    emailVerificationTokenExpiry: row.emailVerificationTokenExpiry,
-    createdAt: row.createdAt,
-    updatedAt: row.updatedAt,
+    id: data._id.toString(),
+    name: data.name,
+    email: data.email,
+    password: data.password,
+    avatarURL: data.avatarURL || '',
+    theme: data.theme || 'light',
+    refreshTokenHash: data.refreshTokenHash,
+    passwordResetTokenHash: data.passwordResetTokenHash,
+    passwordResetTokenExpiry: data.passwordResetTokenExpiry,
+    pendingEmail: data.pendingEmail,
+    emailVerificationTokenHash: data.emailVerificationTokenHash,
+    emailVerificationTokenExpiry: data.emailVerificationTokenExpiry,
+    createdAt: data.createdAt,
+    updatedAt: data.updatedAt,
   };
 };
 
-const insertUser = (db, { name, email, password }) => {
-  const timestamps = Date.now();
-  const statement = db.prepare(`
-    INSERT INTO users (name, email, password, createdAt, updatedAt)
-    VALUES (@name, @email, @password, @createdAt, @updatedAt)
-  `);
+const isValidObjectId = (id) => mongoose.Types.ObjectId.isValid(id);
 
-  const result = statement.run({
+const createUser = async ({ name, email, password }) => {
+  const hashedPassword = await bcrypt.hash(password, 10);
+  const user = await User.create({
     name,
     email,
-    password,
-    createdAt: timestamps,
-    updatedAt: timestamps,
+    password: hashedPassword,
+    createdAt: Date.now(),
+    updatedAt: Date.now(),
   });
 
-  return result.lastInsertRowid;
+  return mapUserDoc(user);
 };
 
-const updateUser = (db, id, updates) => {
+const findUserById = async (id) => {
+  if (!isValidObjectId(id)) {
+    return null;
+  }
+  const user = await User.findById(id).lean();
+  return mapUserDoc(user);
+};
+
+const findUserByEmail = async (email) => {
+  const user = await User.findOne({ email }).lean();
+  return mapUserDoc(user);
+};
+
+const findUserByResetToken = async (tokenHash) => {
+  const user = await User.findOne({
+    passwordResetTokenHash: tokenHash,
+    passwordResetTokenExpiry: { $gt: Date.now() },
+  }).lean();
+  return mapUserDoc(user);
+};
+
+const updateUser = async (id, updates) => {
+  if (!isValidObjectId(id)) {
+    return null;
+  }
+
   const allowedFields = [
     'name',
     'email',
@@ -57,151 +101,77 @@ const updateUser = (db, id, updates) => {
     'emailVerificationTokenExpiry',
   ];
 
-  const entries = Object.entries(updates).filter(
-    ([key, value]) => allowedFields.includes(key) && typeof value !== 'undefined'
+  const nextUpdates = Object.fromEntries(
+    Object.entries(updates || {}).filter(
+      ([key, value]) => allowedFields.includes(key) && typeof value !== 'undefined'
+    )
   );
 
-  if (!entries.length) {
-    return;
+  if (!Object.keys(nextUpdates).length) {
+    return findUserById(id);
   }
 
-  const assignments = entries.map(([key]) => `${key} = @${key}`).join(', ');
-  const statement = db.prepare(`
-    UPDATE users
-    SET ${assignments}, updatedAt = @updatedAt
-    WHERE id = @id
-  `);
+  nextUpdates.updatedAt = Date.now();
 
-  statement.run({
-    ...Object.fromEntries(entries),
-    id,
-    updatedAt: Date.now(),
-  });
+  const user = await User.findByIdAndUpdate(id, nextUpdates, {
+    new: true,
+    runValidators: true,
+  }).lean();
+
+  return mapUserDoc(user);
 };
 
-const findUserById = async (id) => {
-  const db = getDB();
-  const row = db.prepare('SELECT * FROM users WHERE id = ?').get(id);
-  return mapUserRow(row);
-};
+const updateRefreshToken = async (id, refreshTokenHash) => updateUser(id, { refreshTokenHash });
 
-const findUserByEmail = async (email) => {
-  const db = getDB();
-  const row = db.prepare('SELECT * FROM users WHERE email = ?').get(email);
-  return mapUserRow(row);
-};
+const clearRefreshToken = async (id) => updateUser(id, { refreshTokenHash: null });
 
-const findUserByResetToken = async (tokenHash) => {
-  const db = getDB();
-  const row = db
-    .prepare(
-      `
-      SELECT *
-      FROM users
-      WHERE passwordResetTokenHash = @tokenHash
-        AND passwordResetTokenExpiry IS NOT NULL
-        AND passwordResetTokenExpiry > @now
-    `
-    )
-    .get({
-      tokenHash,
-      now: Date.now(),
-    });
-
-  return mapUserRow(row);
-};
-
-const createUser = async ({ name, email, password }) => {
-  const db = getDB();
-  const hashedPassword = await bcrypt.hash(password, 10);
-  const userId = insertUser(db, {
-    name,
-    email,
-    password: hashedPassword,
-  });
-
-  return findUserById(userId);
-};
-
-const updateRefreshToken = async (id, refreshTokenHash) => {
-  const db = getDB();
-  updateUser(db, id, { refreshTokenHash });
-  return findUserById(id);
-};
-
-const clearRefreshToken = async (id) => {
-  const db = getDB();
-  updateUser(db, id, { refreshTokenHash: null });
-  return findUserById(id);
-};
-
-const setPasswordResetToken = async (id, tokenHash, expiry) => {
-  const db = getDB();
-  updateUser(db, id, {
+const setPasswordResetToken = async (id, tokenHash, expiry) =>
+  updateUser(id, {
     passwordResetTokenHash: tokenHash,
     passwordResetTokenExpiry: expiry,
   });
-  return findUserById(id);
-};
 
-const clearPasswordResetToken = async (id) => {
-  const db = getDB();
-  updateUser(db, id, {
+const clearPasswordResetToken = async (id) =>
+  updateUser(id, {
     passwordResetTokenHash: null,
     passwordResetTokenExpiry: null,
   });
-  return findUserById(id);
-};
 
 const updatePassword = async (id, password) => {
-  const db = getDB();
   const hashedPassword = await bcrypt.hash(password, 10);
-  updateUser(db, id, {
+  return updateUser(id, {
     password: hashedPassword,
     passwordResetTokenHash: null,
     passwordResetTokenExpiry: null,
   });
-  return findUserById(id);
 };
 
-const updateUserFields = async (id, updates) => {
-  const db = getDB();
-  updateUser(db, id, updates);
-  return findUserById(id);
-};
+const updateUserFields = async (id, updates) => updateUser(id, updates);
 
-const setPendingEmail = async (id, { pendingEmail, tokenHash, expiry }) => {
-  const db = getDB();
-  updateUser(db, id, {
+const setPendingEmail = async (id, { pendingEmail, tokenHash, expiry }) =>
+  updateUser(id, {
     pendingEmail,
     emailVerificationTokenHash: tokenHash,
     emailVerificationTokenExpiry: expiry,
   });
-  return findUserById(id);
-};
 
-const clearPendingEmail = async (id) => {
-  const db = getDB();
-  updateUser(db, id, {
+const clearPendingEmail = async (id) =>
+  updateUser(id, {
     pendingEmail: null,
     emailVerificationTokenHash: null,
     emailVerificationTokenExpiry: null,
   });
-  return findUserById(id);
-};
 
 const applyPendingEmail = async (id) => {
-  const db = getDB();
   const user = await findUserById(id);
   if (!user || !user.pendingEmail) return user;
 
-  updateUser(db, id, {
+  return updateUser(id, {
     email: user.pendingEmail,
     pendingEmail: null,
     emailVerificationTokenHash: null,
     emailVerificationTokenExpiry: null,
   });
-  return findUserById(id);
 };
 
 module.exports = {
