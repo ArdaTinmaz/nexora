@@ -180,7 +180,8 @@
   gap: 6px;
 }
 
-.chat-widget-lite-invite input {
+.chat-widget-lite-invite input,
+.chat-widget-lite-invite select {
   padding: 8px 10px;
   border-radius: 8px;
   border: 1px solid #2a2a2a;
@@ -248,6 +249,22 @@
 .chat-widget-lite-error-text {
   color: #fca5a5;
   font-size: 13px;
+}
+
+.chat-widget-lite-load-more {
+  align-self: flex-start;
+  margin-bottom: 6px;
+  background: #111827;
+  color: #e5e7eb;
+  border: 1px solid #2a2a2a;
+  padding: 6px 10px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.chat-widget-lite-subtle {
+  color: #9ca3af;
+  font-size: 12px;
 }
 
 @media (max-width: 720px) {

@@ -188,4 +188,7 @@ module.exports = {
   setPendingEmail,
   clearPendingEmail,
   applyPendingEmail,
+  // Expose underlying mongoose model-style helpers for admin/screens that expect query chaining
+  find: (...args) => User.find(...args),
+  model: User,
 };

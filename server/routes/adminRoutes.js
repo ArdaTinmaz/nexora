@@ -11,6 +11,8 @@ const {
   deleteTeam,
   listProjects,
   createProject,
+  updateProject,
+  updateTeamProject,
 } = require('../controllers/adminController');
 
 const router = express.Router();
@@ -30,5 +32,7 @@ router.delete('/teams/:teamId', deleteTeam);
 
 router.get('/projects', listProjects);
 router.post('/projects', createProject);
+router.patch('/projects/:projectId', updateProject);
+router.post('/projects/:projectId/teams/:teamId', updateTeamProject);
 
 module.exports = router;

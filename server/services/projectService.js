@@ -4,9 +4,25 @@ const Team = require('../models/Team');
 
 const toObjectId = (id) => new mongoose.Types.ObjectId(id);
 
+const toObjectIdSafe = (id) => (mongoose.Types.ObjectId.isValid(id) ? toObjectId(id) : null);
+
+const assertValidObjectId = (id, fieldName) => {
+  if (!mongoose.Types.ObjectId.isValid(id)) {
+    const error = new Error(`${fieldName || 'Id'} geçersiz`);
+    error.statusCode = 400;
+    throw error;
+  }
+  return toObjectId(id);
+};
+
 const ensureProjectOwner = async (projectId, ownerId) => {
   if (!mongoose.Types.ObjectId.isValid(projectId)) {
     const error = new Error('Geçersiz proje');
+    error.statusCode = 400;
+    throw error;
+  }
+  if (!mongoose.Types.ObjectId.isValid(ownerId)) {
+    const error = new Error('Geçersiz owner');
     error.statusCode = 400;
     throw error;
   }
@@ -26,9 +42,16 @@ const createProject = async ({ name, ownerId, parentProjectId = null, endDate = 
     throw error;
   }
 
+  const ownerObjectId = toObjectIdSafe(ownerId) || new mongoose.Types.ObjectId();
+  if (parentProjectId && !mongoose.Types.ObjectId.isValid(parentProjectId)) {
+    const error = new Error('parentProjectId geçersiz');
+    error.statusCode = 400;
+    throw error;
+  }
+
   const project = await Project.create({
     name: name.trim(),
-    ownerId: toObjectId(ownerId),
+    ownerId: ownerObjectId,
     parentProjectId: parentProjectId ? toObjectId(parentProjectId) : null,
     endDate: endDate || null,
     createdAt: Date.now(),

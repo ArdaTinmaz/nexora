@@ -38,6 +38,39 @@ const AdminPanel = () => {
     [projects, selectedProjectId]
   );
 
+  const userOptions = useMemo(
+    () =>
+      users.map((u) => ({
+        id: u.id || u._id,
+        label: `${u.name} (${u.email})`,
+      })),
+    [users]
+  );
+
+  const userNameMap = useMemo(() => {
+    const map = {};
+    users.forEach((u) => {
+      const key = u.id || u._id;
+      if (key) {
+        map[key] = u.name || u.email || key;
+      }
+    });
+    return map;
+  }, [users]);
+
+  const resetUserSelectionsIfNeeded = (list) => {
+    const firstId = list[0]?.id || '';
+    if (!list.length) {
+      setLeaderId('');
+      setMemberId('');
+      setSelectedUserId('');
+      return;
+    }
+    if (!list.find((u) => u.id === leaderId)) setLeaderId(firstId);
+    if (!list.find((u) => u.id === memberId)) setMemberId(firstId);
+    if (!list.find((u) => u.id === selectedUserId)) setSelectedUserId(firstId);
+  };
+
   const loadData = async () => {
     try {
       const [projectList, teamList, userList] = await Promise.all([
@@ -48,6 +81,7 @@ const AdminPanel = () => {
       setProjects(projectList);
       setTeams(teamList);
       setUsers(userList);
+      resetUserSelectionsIfNeeded(userList);
       if (!selectedProjectId && projectList.length) {
         setSelectedProjectId(projectList[0].id);
       }
@@ -99,7 +133,18 @@ const AdminPanel = () => {
   };
 
   const createTeam = async () => {
-    if (!teamName.trim() || !leaderId.trim() || !selectedProjectId) return;
+    if (!teamName.trim()) {
+      setStatusMessage('Team name zorunlu');
+      return;
+    }
+    if (!leaderId) {
+      setStatusMessage('Lider seçin');
+      return;
+    }
+    if (!selectedProjectId) {
+      setStatusMessage('Project seçin');
+      return;
+    }
     try {
       await adminApi.createTeam({
         name: teamName,
@@ -117,7 +162,10 @@ const AdminPanel = () => {
   };
 
   const addMember = async () => {
-    if (!memberId.trim()) return;
+    if (!memberId) {
+      setStatusMessage('Üye seçin');
+      return;
+    }
     const teamId = teams.find((t) => t.projectId === selectedProjectId)?.id || teams[0]?.id;
     if (!teamId) {
       setStatusMessage('No team selected/available');
@@ -281,11 +329,18 @@ const AdminPanel = () => {
               value={teamName}
               onChange={(e) => setTeamName(e.target.value)}
             />
-            <input
-              placeholder="Leader userId"
+            <select
               value={leaderId}
               onChange={(e) => setLeaderId(e.target.value)}
-            />
+              disabled={!userOptions.length}
+            >
+              <option value="">Select leader</option>
+              {userOptions.map((u) => (
+                <option key={u.id} value={u.id}>
+                  {u.label}
+                </option>
+              ))}
+            </select>
             <select
               value={selectedProjectId}
               onChange={(e) => setSelectedProjectId(e.target.value)}
@@ -304,16 +359,26 @@ const AdminPanel = () => {
               <div key={t.id} className={styles.card}>
                 <div className={styles.cardTitle}>{t.name}</div>
                 <div className={styles.subtle}>Project: {t.projectId || '—'}</div>
-                <div className={styles.subtle}>Leader: {t.leaderId}</div>
+                <div className={styles.subtle}>Leader: {userNameMap[t.leaderId] || t.leaderId}</div>
                 <div className={styles.subtle}>
-                  Members: {t.members?.map((m) => `${m.userId} (${m.role})`).join(', ') || '—'}
+                  Members:{' '}
+                  {t.members
+                    ?.map((m) => `${userNameMap[m.userId] || m.userId} (${m.role})`)
+                    .join(', ') || '—'}
                 </div>
                 <div className={styles.rowActions}>
-                  <input
-                    placeholder="User ID"
+                  <select
                     value={memberId}
                     onChange={(e) => setMemberId(e.target.value)}
-                  />
+                    disabled={!userOptions.length}
+                  >
+                    <option value="">Select member</option>
+                    {userOptions.map((u) => (
+                      <option key={u.id} value={u.id}>
+                        {u.label}
+                      </option>
+                    ))}
+                  </select>
                   <select value={memberRole} onChange={(e) => setMemberRole(e.target.value)}>
                     <option value="developer">developer</option>
                     <option value="designer">designer</option>
@@ -324,13 +389,13 @@ const AdminPanel = () => {
                   </select>
                   <button onClick={() => addMember()}>Add</button>
                   {t.members?.map((m) => (
-                    <button
-                      key={m.userId}
-                      className={styles.danger}
-                      onClick={() => removeMember(t.id, m.userId)}
-                    >
-                      Remove {m.userId}
-                    </button>
+                  <button
+                    key={m.userId}
+                    className={styles.danger}
+                    onClick={() => removeMember(t.id, m.userId)}
+                  >
+                    Remove {userNameMap[m.userId] || m.userId}
+                  </button>
                   ))}
                   <button className={styles.danger} onClick={() => deleteTeam(t.id)}>
                     Delete team

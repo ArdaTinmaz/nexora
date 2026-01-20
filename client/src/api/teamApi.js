@@ -30,4 +30,5 @@ const request = async (path, options = {}) => {
 
 export const teamApi = {
   myTeams: () => request('/teams/my'),
+  members: (teamId) => request(`/teams/${teamId}/members`),
 };

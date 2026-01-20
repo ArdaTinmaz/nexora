@@ -79,4 +79,18 @@ export const adminApi = {
       method: 'POST',
       body: JSON.stringify(payload),
     }),
+  updateProject: (projectId, payload) =>
+    request(`/admin/projects/${projectId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(payload),
+    }),
+  updateTeamProject: (projectId, teamId) =>
+    request(`/admin/projects/${projectId}/teams/${teamId}`, {
+      method: 'POST',
+    }),
+  createUser: (payload) =>
+    request('/auth/register', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
 };
