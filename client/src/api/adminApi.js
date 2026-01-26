@@ -60,6 +60,11 @@ export const adminApi = {
       method: 'POST',
       body: JSON.stringify(payload),
     }),
+  updateTeam: (teamId, payload) =>
+    request(`/admin/teams/${teamId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(payload),
+    }),
   addTeamMember: (teamId, payload) =>
     request(`/admin/teams/${teamId}/members`, {
       method: 'POST',
@@ -87,6 +92,14 @@ export const adminApi = {
   updateTeamProject: (projectId, teamId) =>
     request(`/admin/projects/${projectId}/teams/${teamId}`, {
       method: 'POST',
+    }),
+  removeTeamFromProject: (projectId, teamId) =>
+    request(`/admin/projects/${projectId}/teams/${teamId}/remove`, {
+      method: 'POST',
+    }),
+  deleteProject: (projectId) =>
+    request(`/admin/projects/${projectId}`, {
+      method: 'DELETE',
     }),
   createUser: (payload) =>
     request('/auth/register', {

@@ -35,7 +35,14 @@ const ensureProjectOwner = async (projectId, ownerId) => {
   return project;
 };
 
-const createProject = async ({ name, ownerId, parentProjectId = null, endDate = null }) => {
+const createProject = async ({
+  name,
+  ownerId,
+  ownerName = '',
+  parentProjectId = null,
+  endDate = null,
+  status = 'Active',
+}) => {
   if (!name || !name.trim()) {
     const error = new Error('Proje adı zorunlu');
     error.statusCode = 400;
@@ -52,7 +59,9 @@ const createProject = async ({ name, ownerId, parentProjectId = null, endDate = 
   const project = await Project.create({
     name: name.trim(),
     ownerId: ownerObjectId,
+    ownerName: ownerName || '',
     parentProjectId: parentProjectId ? toObjectId(parentProjectId) : null,
+    status,
     endDate: endDate || null,
     createdAt: Date.now(),
   });
@@ -61,7 +70,9 @@ const createProject = async ({ name, ownerId, parentProjectId = null, endDate = 
     id: project._id.toString(),
     name: project.name,
     ownerId: project.ownerId.toString(),
+    ownerName: project.ownerName || '',
     parentProjectId: project.parentProjectId ? project.parentProjectId.toString() : null,
+    status: project.status || 'Active',
     endDate: project.endDate,
     createdAt: project.createdAt,
   };
@@ -73,7 +84,9 @@ const listProjects = async (ownerId) => {
     id: project._id.toString(),
     name: project.name,
     ownerId: project.ownerId.toString(),
+    ownerName: project.ownerName || '',
     parentProjectId: project.parentProjectId ? project.parentProjectId.toString() : null,
+    status: project.status || 'Active',
     endDate: project.endDate,
     createdAt: project.createdAt,
   }));

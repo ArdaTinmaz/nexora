@@ -17,6 +17,7 @@ const teamMemberSchema = new Schema(
 const teamSchema = new Schema({
   name: { type: String, required: true },
   projectId: { type: Schema.Types.ObjectId, required: false, index: true, default: null },
+  projectHistory: { type: [Schema.Types.ObjectId], default: [] },
   leaderId: { type: Schema.Types.ObjectId, ref: 'User', required: true, index: true },
   members: { type: [teamMemberSchema], default: [] },
   createdAt: { type: Number, default: Date.now },

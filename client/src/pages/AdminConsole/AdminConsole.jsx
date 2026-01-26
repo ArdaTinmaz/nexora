@@ -19,11 +19,21 @@ const AdminConsole = () => {
   const [assignDraft, setAssignDraft] = useState({});
   const [newUser, setNewUser] = useState({ name: '', email: '', password: '' });
   const [projectModal, setProjectModal] = useState(null);
-  const [projectDraft, setProjectDraft] = useState({ name: '', ownerId: '', status: '' });
+  const [projectDraft, setProjectDraft] = useState({ name: '', ownerId: '', ownerName: '', status: '' });
   const [assignProjectDraft, setAssignProjectDraft] = useState({ teamId: '' });
+  const [assignMode, setAssignMode] = useState('add');
   const [teamModal, setTeamModal] = useState(null);
   const [teamDraft, setTeamDraft] = useState({ name: '', leaderId: '' });
   const [memberDraft, setMemberDraft] = useState({ userId: '', role: 'developer' });
+  const [memberMode, setMemberMode] = useState('add');
+
+  const userNameMap = useMemo(() => {
+    const map = {};
+    users.forEach((u) => {
+      if (u.id) map[u.id] = u.name || u.email || u.id;
+    });
+    return map;
+  }, [users]);
 
   const projectNameMap = useMemo(() => {
     const map = {};
@@ -175,6 +185,58 @@ const AdminConsole = () => {
     }
   };
 
+  const handleAddTeamToProject = async () => {
+    if (!assignProjectDraft.teamId || !projectModal?.id) {
+      setStatusMsg('Team ve proje seçin');
+      return;
+    }
+    try {
+      setLoading(true);
+      await adminApi.updateTeamProject(projectModal.id, assignProjectDraft.teamId);
+      setAssignProjectDraft({ teamId: '' });
+      setStatusMsg('Team assigned');
+      await loadData();
+    } catch (err) {
+      setStatusMsg(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleRemoveTeamFromProject = async () => {
+    if (!assignProjectDraft.teamId || !projectModal?.id) {
+      setStatusMsg('Team ve proje seçin');
+      return;
+    }
+    try {
+      setLoading(true);
+      await adminApi.removeTeamFromProject(projectModal.id, assignProjectDraft.teamId);
+      setAssignProjectDraft({ teamId: '' });
+      setStatusMsg('Team removed');
+      await loadData();
+    } catch (err) {
+      setStatusMsg(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleTeamAssignAction = async () => {
+    if (!assignProjectDraft.teamId || !projectModal?.id) return;
+    if (assignMode === 'delete') {
+      await handleRemoveTeamFromProject();
+    } else {
+      await handleAddTeamToProject();
+    }
+  };
+
+  useEffect(() => {
+    if (projectModal) {
+      setAssignMode('add');
+      setAssignProjectDraft({ teamId: '' });
+    }
+  }, [projectModal]);
+
   const handleRemoveMemberFromTeam = async (teamId, userId) => {
     try {
       setLoading(true);
@@ -283,12 +345,12 @@ const AdminConsole = () => {
                           }))
                         }
                       >
-                        <option value="">Select team</option>
-                        {teams.map((team) => (
-                          <option key={team.id} value={team.id}>
-                            {team.name}
-                          </option>
-                        ))}
+                <option value="">Select Team</option>
+                {teams.map((team) => (
+                  <option key={team.id} value={team.id}>
+                    {team.name}
+                  </option>
+                ))}
                       </select>
                       <select
                         className={styles.select}
@@ -348,10 +410,24 @@ const AdminConsole = () => {
             <div key={team.id} className={styles.card}>
               <div className={styles.cardTitle}>{team.name}</div>
               <div className={styles.muted}>
-                Project: {projectNameMap[team.projectId] || '—'}
+                Project:{' '}
+                {(() => {
+                  const ids = Array.from(
+                    new Set([
+                      ...(team.projectHistory || []),
+                      ...(team.projectId ? [team.projectId] : []),
+                    ])
+                  );
+                  const names = ids.map((id) => projectNameMap[id]).filter(Boolean);
+                  return names.length ? names.join(', ') : '—';
+                })()}
               </div>
-              <div className={styles.muted}>Team lead: {team.leaderId}</div>
-              <div className={styles.muted}>Members: {team.members?.length || 0}</div>
+              <div className={styles.muted}>
+                Team lead: {userNameMap[team.leaderId] || team.leaderId}
+              </div>
+              <div className={styles.muted}>
+                Members: {team.members?.length || 0}
+              </div>
               <div className={styles.actions}>
                 <button
                   className={styles.btnGhost}
@@ -363,18 +439,19 @@ const AdminConsole = () => {
                     });
                   }}
                 >
-                  Edit team
+                  Edit Team
                 </button>
                 <button
                   className={styles.btnGhost}
                   onClick={() => {
-                    setTeamModal({ mode: 'members', team });
-                    setMemberDraft({ userId: users[0]?.id || '', role: 'developer' });
-                  }}
-                >
-                  Manage members
-                </button>
-              </div>
+            setTeamModal({ mode: 'members', team });
+            setMemberDraft({ userId: users[0]?.id || '', role: 'developer' });
+            setMemberMode('add');
+          }}
+        >
+          Manage Members
+        </button>
+      </div>
             </div>
           ))
         )}
@@ -388,12 +465,11 @@ const AdminConsole = () => {
                 <div className={styles.cardTitle}>
                   {teamModal.mode === 'create' ? 'Create Team' : 'Team details'}
                 </div>
-                {teamModal.team && <div className={styles.muted}>{teamModal.team.id}</div>}
               </div>
-              <button className={styles.btnGhost} onClick={() => setTeamModal(null)}>
-                Close
-              </button>
-            </div>
+                <button className={styles.btnGhost} onClick={() => setTeamModal(null)}>
+                  Close
+                </button>
+              </div>
 
             {(teamModal.mode === 'create' || teamModal.mode === 'edit') && (
               <div className={styles.modalGrid}>
@@ -414,7 +490,7 @@ const AdminConsole = () => {
                   >
                     {users.map((u) => (
                       <option key={u.id} value={u.id}>
-                        {u.name} ({u.email})
+                        {u.name}
                       </option>
                     ))}
                   </select>
@@ -425,48 +501,127 @@ const AdminConsole = () => {
             {teamModal.mode === 'members' && teamModal.team && (
               <div className={styles.inlinePanel}>
                 <div className={styles.inlineRow}>
-                  <div className={styles.muted}>Members</div>
-                  <div className={styles.chipRow}>
-                    {teamModal.team.members?.map((m) => (
-                      <button
-                        key={m.userId}
-                        className={styles.chip}
-                        onClick={() => handleRemoveMemberFromTeam(teamModal.team.id, m.userId)}
-                      >
-                        {m.userId} ({m.role}) ✕
-                      </button>
-                    )) || <span className={styles.muted}>No members</span>}
-                  </div>
-                </div>
-                <div className={styles.inlineRow}>
-                  <label>Add member</label>
+                  <div className={styles.sectionLabel}>Add/Delete member</div>
+                  <button
+                    type="button"
+                    className={`${styles.toggle} ${memberMode === 'delete' ? styles.toggleOff : styles.toggleOn}`}
+                    onClick={() => {
+                      const next = memberMode === 'add' ? 'delete' : 'add';
+                      setMemberMode(next);
+                      const memberIds = (teamModal.team.members || []).map((m) => m.userId);
+                      const firstMatch =
+                        next === 'delete'
+                          ? memberIds[0] || ''
+                          : (users.find((u) => !memberIds.includes(u.id))?.id || '');
+                      setMemberDraft((p) => ({ ...p, userId: firstMatch }));
+                    }}
+                  >
+                    <span className={styles.toggleText}>{memberMode === 'delete' ? 'Delete' : 'Add'}</span>
+                    <span
+                      className={`${styles.toggleKnob} ${
+                        memberMode === 'delete' ? styles.knobOff : styles.knobOn
+                      }`}
+                    />
+                  </button>
                   <select
                     className={styles.select}
                     value={memberDraft.userId}
                     onChange={(e) => setMemberDraft((p) => ({ ...p, userId: e.target.value }))}
                   >
-                    {users.map((u) => (
+                    <option value="">Select member</option>
+                    {(memberMode === 'delete'
+                      ? users.filter((u) =>
+                          (teamModal.team.members || []).some((m) => m.userId === u.id)
+                        )
+                      : users.filter(
+                          (u) => !(teamModal.team.members || []).some((m) => m.userId === u.id)
+                        )
+                    ).map((u) => (
                       <option key={u.id} value={u.id}>
-                        {u.name} ({u.email})
+                        {u.name}
                       </option>
                     ))}
                   </select>
-                  <select
-                    className={styles.select}
-                    value={memberDraft.role}
-                    onChange={(e) => setMemberDraft((p) => ({ ...p, role: e.target.value }))}
-                  >
-                    {roleOptions.map((r) => (
-                      <option key={r} value={r}>
-                        {r}
-                      </option>
-                    ))}
-                  </select>
+                  {memberMode === 'add' && (
+                    <select
+                      className={styles.select}
+                      value={memberDraft.role}
+                      onChange={(e) => setMemberDraft((p) => ({ ...p, role: e.target.value }))}
+                    >
+                      {(() => {
+                        const hasLead = (teamModal.team.members || []).some((m) => m.role === 'team_leader');
+                        const availableRoles =
+                          memberMode === 'add' && hasLead
+                            ? roleOptions.filter((r) => r !== 'team_leader')
+                            : roleOptions;
+                        if (memberDraft.role === 'team_leader' && hasLead) {
+                          setMemberDraft((p) => ({ ...p, role: 'developer' }));
+                        }
+                        return availableRoles;
+                      })().map((r) => (
+                        <option key={r} value={r}>
+                          {r}
+                        </option>
+                      ))}
+                    </select>
+                  )}
+                </div>
+                <div className={styles.inlineRow}>
+                  <div className={styles.sectionLabel}>Members</div>
+                  <div className={styles.chipRow}>
+                    {teamModal.team.members?.length ? (
+                      teamModal.team.members.map((m) => (
+                        <span key={m.userId} className={styles.chip}>
+                          {userNameMap[m.userId] || m.userId} ({m.role})
+                        </span>
+                      ))
+                    ) : (
+                      <span className={styles.muted}>No members</span>
+                    )}
+                  </div>
+                </div>
+                <div className={styles.actionsEnd}>
                   <button
-                    className={styles.btnGhost}
-                    onClick={() => handleAddMemberToTeam(teamModal.team.id)}
+                    className={styles.btnPrimary}
+                    onClick={async () => {
+                      if (!memberDraft.userId) return;
+                      const hasLead = (teamModal.team.members || []).some((m) => m.role === 'team_leader');
+                      if (memberMode === 'add' && memberDraft.role === 'team_leader' && hasLead) {
+                        setStatusMsg('Bu takımda zaten bir team_leader var');
+                        return;
+                      }
+                      try {
+                        setLoading(true);
+                        let resp;
+                        if (memberMode === 'delete') {
+                          resp = await adminApi.removeTeamMember(teamModal.team.id, memberDraft.userId);
+                        } else {
+                          resp = await adminApi.addTeamMember(teamModal.team.id, {
+                            userId: memberDraft.userId,
+                            role: memberDraft.role,
+                          });
+                        }
+                        setStatusMsg('Team members updated');
+                        setMemberDraft((p) => ({ ...p, userId: '' }));
+                        if (resp?.members) {
+                          setTeamModal((prev) =>
+                            prev
+                              ? {
+                                  ...prev,
+                                  team: { ...prev.team, members: resp.members },
+                                }
+                              : prev
+                          );
+                        }
+                        await loadData();
+                      } catch (err) {
+                        setStatusMsg(err.message);
+                      } finally {
+                        setLoading(false);
+                      }
+                    }}
                   >
-                    Add
+                    Save Changes
                   </button>
                 </div>
               </div>
@@ -474,16 +629,24 @@ const AdminConsole = () => {
 
             <div className={styles.actions}>
               {teamModal.mode === 'create' && (
-                <button className={styles.btnAccent} onClick={handleCreateTeam} disabled={loading}>
+                <button className={styles.btnPrimary} onClick={handleCreateTeam} disabled={loading}>
                   {loading ? 'Creating...' : 'Create team'}
                 </button>
               )}
               {teamModal.mode === 'edit' && (
                 <button
-                  className={styles.btnAccent}
+                  className={styles.btnPrimary}
                   onClick={async () => {
+                    if (!teamDraft.name || !teamDraft.leaderId) {
+                      setStatusMsg('Team name ve leader zorunlu');
+                      return;
+                    }
                     try {
                       setLoading(true);
+                      await adminApi.updateTeam(teamModal.team.id, {
+                        name: teamDraft.name,
+                        leaderId: teamDraft.leaderId,
+                      });
                       setStatusMsg('Team updated');
                       await loadData();
                       setTeamModal(null);
@@ -494,7 +657,7 @@ const AdminConsole = () => {
                     }
                   }}
                 >
-                  Save changes
+                  Save Changes
                 </button>
               )}
             </div>
@@ -515,7 +678,14 @@ const AdminConsole = () => {
           className={`${styles.btn} ${styles.btnAccent}`}
           onClick={() => {
             setProjectModal({ id: null });
-            setProjectDraft({ name: '', ownerId: users[0]?.id || '', status: 'Active' });
+            const firstId = users[0]?.id || '';
+            setProjectDraft({
+              name: '',
+              ownerId: firstId,
+              ownerName: userNameMap[firstId] || '',
+              status: 'Active',
+            });
+            setAssignProjectDraft({ teamId: '' });
           }}
         >
           + Create Project
@@ -527,18 +697,49 @@ const AdminConsole = () => {
         ) : (
           projects.map((project) => (
             <div key={project.id} className={styles.card}>
-              <div className={styles.cardTitle}>{project.name}</div>
-              <div className={styles.muted}>Owner: {project.ownerId || '—'}</div>
-              <div className={styles.muted}>
-                Teams: {teams.filter((t) => t.projectId === project.id).length}
+              <div className={styles.cardHeader}>
+                <div className={styles.cardTitle}>{project.name}</div>
+                <button
+                  className={styles.iconButton}
+                  title="Delete project"
+                  onClick={async () => {
+                    try {
+                      setLoading(true);
+                      await adminApi.deleteProject(project.id);
+                      setStatusMsg('Project deleted');
+                      await loadData();
+                    } catch (err) {
+                      setStatusMsg(err.message);
+                    } finally {
+                      setLoading(false);
+                    }
+                  }}
+                >
+                  🗑️
+                </button>
               </div>
               <div className={styles.muted}>
-                Members:{' '}
-                {teams
-                  .filter((t) => t.projectId === project.id)
-                  .reduce((sum, t) => sum + (t.members?.length || 0), 0)}
+                Owner: {userNameMap[project.ownerId] || project.ownerName || project.ownerId || '—'}
               </div>
-              <div className={styles.tag}>{project.status || 'Active'}</div>
+              <div className={styles.metaRow}>
+                <span>
+                  Teams:{' '}
+                  {teams.filter((t) => t.projectId === project.id).length}
+                </span>
+                <span>
+                  Members:{' '}
+                  {Array.from(
+                    new Set(
+                      teams
+                        .filter((t) => t.projectId === project.id)
+                        .flatMap((t) => t.members?.map((m) => m.userId) || [])
+                    )
+                  ).length}
+                </span>
+              </div>
+              <div className={`${styles.tag} ${project.status === 'Passive' ? styles.tagDanger : styles.tagSuccess}`}>
+                {project.status || 'Active'}
+              </div>
               <div className={styles.actions}>
                 <button
                   className={styles.btnGhost}
@@ -547,24 +748,12 @@ const AdminConsole = () => {
                     setProjectDraft({
                       name: project.name,
                       ownerId: project.ownerId || '',
+                      ownerName: project.ownerName || userNameMap[project.ownerId] || '',
                       status: project.status || 'Active',
                     });
                   }}
                 >
-                  Edit project
-                </button>
-                <button
-                  className={styles.btnGhost}
-                  onClick={() => {
-                    setProjectModal(project);
-                    setProjectDraft({
-                      name: project.name,
-                      ownerId: project.ownerId || '',
-                      status: project.status || 'Active',
-                    });
-                  }}
-                >
-                  Assign teams
+                  Edit Project
                 </button>
               </div>
             </div>
@@ -579,7 +768,6 @@ const AdminConsole = () => {
                 <div className={styles.cardTitle}>
                   {projectModal.id ? 'Project details' : 'Create Project'}
                 </div>
-                {projectModal.id && <div className={styles.muted}>{projectModal.id}</div>}
               </div>
               <button className={styles.btnGhost} onClick={() => setProjectModal(null)}>
                 Close
@@ -603,65 +791,79 @@ const AdminConsole = () => {
                 >
                   {users.map((u) => (
                     <option key={u.id} value={u.id}>
-                      {u.name} ({u.email})
+                      {u.name}
                     </option>
                   ))}
                 </select>
               </label>
             </div>
             <div className={styles.inlineRow}>
-              <div className={styles.tag}>
-                Teams: {teams.filter((t) => t.projectId === projectModal.id).length}
-              </div>
-              <div className={styles.tag}>
-                Members:{' '}
-                {teams
-                  .filter((t) => t.projectId === projectModal.id)
-                  .reduce((sum, t) => sum + (t.members?.length || 0), 0)}
-              </div>
-            </div>
-            <div className={styles.inlinePanel}>
-              <div className={styles.inlineRow}>
-                <label>Add team to project</label>
-                <select
-                  className={styles.select}
-                  value={assignProjectDraft.teamId}
-                  onChange={(e) =>
-                    setAssignProjectDraft((p) => ({
+              <div className={styles.toggleGroup}>
+                <span>Status</span>
+                <button
+                  type="button"
+                  className={`${styles.toggle} ${
+                    projectDraft.status === 'Passive' ? styles.toggleOff : styles.toggleOn
+                  }`}
+                  onClick={() =>
+                    setProjectDraft((p) => ({
                       ...p,
-                      teamId: e.target.value,
+                      status: p.status === 'Passive' ? 'Active' : 'Passive',
                     }))
                   }
                 >
-                  <option value="">Select team</option>
-                  {teams
-                    .filter((t) => t.projectId !== projectModal.id)
-                    .map((t) => (
-                      <option key={t.id} value={t.id}>
-                        {t.name} (current project: {projectNameMap[t.projectId] || t.projectId})
-                      </option>
-                    ))}
-                </select>
-                <button
-                  className={styles.btnGhost}
-                  onClick={async () => {
-                    if (!assignProjectDraft.teamId) return;
-                    try {
-                      setLoading(true);
-                      await adminApi.updateTeamProject(projectModal.id, assignProjectDraft.teamId);
-                      setAssignProjectDraft({ teamId: '' });
-                      setStatusMsg('Team assigned');
-                      await loadData();
-                    } catch (err) {
-                      setStatusMsg(err.message);
-                    } finally {
-                      setLoading(false);
-                    }
-                  }}
-                >
-                  Add team
+                  <span className={styles.toggleText}>
+                    {projectDraft.status === 'Passive' ? 'Passive' : 'Active'}
+                  </span>
+                  <span
+                    className={`${styles.toggleKnob} ${
+                      projectDraft.status === 'Passive' ? styles.knobOff : styles.knobOn
+                    }`}
+                  />
                 </button>
               </div>
+            </div>
+              <div className={styles.inlinePanel}>
+                <div className={styles.inlineRow}>
+              <label>Add team to project</label>
+              <select
+                className={styles.select}
+                value={assignProjectDraft.teamId}
+                onChange={(e) =>
+                  setAssignProjectDraft((p) => ({
+                    ...p,
+                    teamId: e.target.value,
+                  }))
+                }
+              >
+                <option value="">Select Team</option>
+                {teams
+                  .filter((t) =>
+                    assignMode === 'add' ? t.projectId !== projectModal.id : t.projectId === projectModal.id
+                  )
+                  .map((t) => (
+                        <option key={t.id} value={t.id}>
+                          {t.name}
+                        </option>
+                      ))}
+                  </select>
+                  <button
+                    type="button"
+                    className={`${styles.toggle} ${assignMode === 'delete' ? styles.toggleOff : styles.toggleOn}`}
+                    onClick={() => {
+                      const next = assignMode === 'add' ? 'delete' : 'add';
+                      setAssignMode(next);
+                      setAssignProjectDraft({ teamId: '' });
+                    }}
+                  >
+                    <span className={styles.toggleText}>{assignMode === 'delete' ? 'Delete' : 'Add'}</span>
+                    <span
+                      className={`${styles.toggleKnob} ${
+                        assignMode === 'delete' ? styles.knobOff : styles.knobOn
+                      }`}
+                    />
+                  </button>
+                </div>
               <div className={styles.inlineRow}>
                 <label>Teams in this project</label>
                 <div className={styles.chipRow}>
@@ -681,14 +883,17 @@ const AdminConsole = () => {
             <div className={styles.actions}>
               {projectModal?.id ? (
                 <button
-                  className={styles.btnAccent}
+                  className={styles.btnPrimary}
                   onClick={async () => {
                     try {
                       setLoading(true);
                       await adminApi.updateProject(projectModal.id, {
                         name: projectDraft.name,
                         ownerId: projectDraft.ownerId,
+                        ownerName: projectDraft.ownerName || userNameMap[projectDraft.ownerId] || projectDraft.ownerId,
+                        status: projectDraft.status || 'Active',
                       });
+                      await handleTeamAssignAction();
                       setStatusMsg('Project updated');
                       await loadData();
                       setProjectModal(null);
@@ -699,11 +904,11 @@ const AdminConsole = () => {
                     }
                   }}
                 >
-                  Save changes
+                  Save Changes
                 </button>
               ) : (
                 <button
-                  className={styles.btnAccent}
+                  className={styles.btnPrimary}
                   onClick={async () => {
                     if (!projectDraft.name || !projectDraft.ownerId) {
                       setStatusMsg('Name ve owner zorunlu');
@@ -714,6 +919,8 @@ const AdminConsole = () => {
                       await adminApi.createProject({
                         name: projectDraft.name,
                         ownerId: projectDraft.ownerId,
+                        ownerName: projectDraft.ownerName || userNameMap[projectDraft.ownerId] || projectDraft.ownerId,
+                        status: projectDraft.status || 'Active',
                       });
                       setStatusMsg('Project created');
                       await loadData();

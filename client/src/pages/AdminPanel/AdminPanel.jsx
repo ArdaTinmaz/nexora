@@ -58,6 +58,17 @@ const AdminPanel = () => {
     return map;
   }, [users]);
 
+  const projectNameMap = useMemo(() => {
+    const map = {};
+    projects.forEach((p) => {
+      const key = p.id || p._id;
+      if (key) {
+        map[key] = p.name;
+      }
+    });
+    return map;
+  }, [projects]);
+
   const resetUserSelectionsIfNeeded = (list) => {
     const firstId = list[0]?.id || '';
     if (!list.length) {
@@ -358,7 +369,19 @@ const AdminPanel = () => {
             {teams.map((t) => (
               <div key={t.id} className={styles.card}>
                 <div className={styles.cardTitle}>{t.name}</div>
-                <div className={styles.subtle}>Project: {t.projectId || '—'}</div>
+                <div className={styles.subtle}>
+                  Project:{' '}
+                  {(() => {
+                    const ids = Array.from(
+                      new Set([
+                        ...(t.projectHistory || []),
+                        ...(t.projectId ? [t.projectId] : []),
+                      ])
+                    );
+                    const names = ids.map((id) => projectNameMap[id]).filter(Boolean);
+                    return names.length ? names.join(', ') : '—';
+                  })()}
+                </div>
                 <div className={styles.subtle}>Leader: {userNameMap[t.leaderId] || t.leaderId}</div>
                 <div className={styles.subtle}>
                   Members:{' '}

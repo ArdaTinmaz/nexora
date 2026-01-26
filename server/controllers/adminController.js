@@ -74,6 +74,7 @@ exports.listTeams = async (_req, res, next) => {
         id: team._id.toString(),
         name: team.name,
         projectId: team.projectId?.toString(),
+        projectHistory: team.projectHistory?.map((p) => p.toString()) || [],
         leaderId: team.leaderId?.toString(),
         members: (team.members || []).map((m) => ({
           userId: m.userId.toString(),
@@ -119,6 +120,7 @@ exports.createTeam = async (req, res, next) => {
     const team = await Team.create({
       name: name.trim(),
       projectId: projectId ? toObjectId(projectId) : null,
+      projectHistory: projectId ? [toObjectId(projectId)] : [],
       leaderId: toObjectId(leaderId),
       members: mergedMembers,
       createdAt: Date.now(),
@@ -131,6 +133,7 @@ exports.createTeam = async (req, res, next) => {
       leaderId: team.leaderId.toString(),
       members: mergedMembers.map((m) => ({ userId: m.userId.toString(), role: m.role })),
       createdAt: team.createdAt,
+      projectHistory: team.projectHistory?.map((p) => p.toString()) || [],
     });
   } catch (error) {
     next(error);
@@ -217,7 +220,9 @@ exports.listProjects = async (_req, res, next) => {
         id: p._id.toString(),
         name: p.name,
         ownerId: p.ownerId.toString(),
+        ownerName: p.ownerName || '',
         parentProjectId: p.parentProjectId ? p.parentProjectId.toString() : null,
+        status: p.status || 'Active',
         createdAt: p.createdAt,
         endDate: p.endDate,
       }))
@@ -229,12 +234,17 @@ exports.listProjects = async (_req, res, next) => {
 
 exports.createProject = async (req, res, next) => {
   try {
-    const { name, parentProjectId, endDate } = req.body || {};
+    const { name, ownerId, ownerName, parentProjectId, endDate, status } = req.body || {};
+    if (!ownerId || !mongoose.Types.ObjectId.isValid(ownerId)) {
+      return res.status(400).json({ message: 'ownerId geçersiz' });
+    }
     const project = await createProject({
       name,
-      ownerId: req.admin?.username || 'admin',
+      ownerId,
+      ownerName: ownerName || '',
       parentProjectId,
       endDate,
+      status,
     });
     res.status(201).json(project);
   } catch (error) {
@@ -245,14 +255,16 @@ exports.createProject = async (req, res, next) => {
 exports.updateProject = async (req, res, next) => {
   try {
     const { projectId } = req.params;
-    const { name, ownerId, endDate } = req.body || {};
+    const { name, ownerId, ownerName, endDate, status } = req.body || {};
     if (!mongoose.Types.ObjectId.isValid(projectId)) {
       return res.status(400).json({ message: 'projectId geçersiz' });
     }
     const updates = {};
     if (name) updates.name = name.trim();
     if (ownerId) updates.ownerId = ownerId;
+    if (ownerName) updates.ownerName = ownerName;
     if (typeof endDate !== 'undefined') updates.endDate = endDate;
+    if (status) updates.status = status;
 
     const updated = await Project.findByIdAndUpdate(projectId, updates, { new: true }).lean();
     if (!updated) {
@@ -263,9 +275,24 @@ exports.updateProject = async (req, res, next) => {
       name: updated.name,
       ownerId: updated.ownerId?.toString(),
       parentProjectId: updated.parentProjectId ? updated.parentProjectId.toString() : null,
+      status: updated.status || 'Active',
       endDate: updated.endDate,
       createdAt: updated.createdAt,
     });
+  } catch (error) {
+    next(error);
+  }
+};
+
+exports.deleteProject = async (req, res, next) => {
+  try {
+    const { projectId } = req.params;
+    if (!mongoose.Types.ObjectId.isValid(projectId)) {
+      return res.status(400).json({ message: 'projectId geçersiz' });
+    }
+    await Project.deleteOne({ _id: projectId });
+    await Team.updateMany({ projectId }, { projectId: null });
+    res.status(204).end();
   } catch (error) {
     next(error);
   }
@@ -277,7 +304,11 @@ exports.updateTeamProject = async (req, res, next) => {
     if (!mongoose.Types.ObjectId.isValid(projectId) || !mongoose.Types.ObjectId.isValid(teamId)) {
       return res.status(400).json({ message: 'projectId veya teamId geçersiz' });
     }
-    const team = await Team.findByIdAndUpdate(teamId, { projectId }, { new: true }).lean();
+    const team = await Team.findByIdAndUpdate(
+      teamId,
+      { projectId, $addToSet: { projectHistory: projectId } },
+      { new: true }
+    ).lean();
     if (!team) {
       return res.status(404).json({ message: 'Team bulunamadı' });
     }
@@ -285,6 +316,62 @@ exports.updateTeamProject = async (req, res, next) => {
       id: team._id.toString(),
       name: team.name,
       projectId: team.projectId.toString(),
+      projectHistory: team.projectHistory?.map((p) => p.toString()) || [],
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+exports.updateTeam = async (req, res, next) => {
+  try {
+    const { teamId } = req.params;
+    const { name, leaderId } = req.body || {};
+    if (!mongoose.Types.ObjectId.isValid(teamId)) {
+      return res.status(400).json({ message: 'teamId geçersiz' });
+    }
+    const updates = {};
+    if (name) updates.name = name.trim();
+    if (leaderId) updates.leaderId = toObjectId(leaderId);
+
+    const team = await Team.findByIdAndUpdate(teamId, updates, { new: true }).lean();
+    if (!team) {
+      return res.status(404).json({ message: 'Team bulunamadı' });
+    }
+
+    res.json({
+      id: team._id.toString(),
+      name: team.name,
+      leaderId: team.leaderId?.toString(),
+      projectId: team.projectId ? team.projectId.toString() : null,
+      projectHistory: team.projectHistory?.map((p) => p.toString()) || [],
+      members: (team.members || []).map((m) => ({ userId: m.userId.toString(), role: m.role })),
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+exports.removeTeamFromProject = async (req, res, next) => {
+  try {
+    const { projectId, teamId } = req.params;
+    if (!mongoose.Types.ObjectId.isValid(projectId) || !mongoose.Types.ObjectId.isValid(teamId)) {
+      return res.status(400).json({ message: 'projectId veya teamId geçersiz' });
+    }
+
+    const team = await Team.findOneAndUpdate(
+      { _id: teamId, projectId },
+      { projectId: null },
+      { new: true }
+    ).lean();
+
+    if (!team) {
+      return res.status(404).json({ message: 'Team bulunamadı veya bu projede değil' });
+    }
+
+    res.json({
+      id: team._id.toString(),
+      projectId: team.projectId,
     });
   } catch (error) {
     next(error);
