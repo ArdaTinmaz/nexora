@@ -83,7 +83,7 @@ const verifyRefreshToken = async (refreshToken) => {
 
 exports.register = async (req, res, next) => {
   try {
-    const { name, email, password } = req.body;
+    const { name, email, password, avatarURL } = req.body;
 
     if (!name || !email || !password) {
       return res.status(400).json({ message: 'İsim, e-posta ve şifre zorunludur' });
@@ -113,6 +113,7 @@ exports.register = async (req, res, next) => {
       name: name.trim(),
       email: normalizedEmail,
       password,
+      avatarURL: typeof avatarURL === 'string' ? avatarURL.trim() : '',
     });
 
     await sendAuthResponse({

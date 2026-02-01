@@ -19,12 +19,13 @@ const authHeaders = () => {
 };
 
 const request = async (path, options = {}) => {
+  const { skipAuth, ...rest } = options || {};
   const response = await fetch(`${API_BASE_URL}${path}`, {
-    ...options,
+    ...rest,
     headers: {
       'Content-Type': 'application/json',
-      ...authHeaders(),
-      ...(options.headers || {}),
+      ...(skipAuth ? {} : authHeaders()),
+      ...(rest.headers || {}),
     },
   });
   const data = await response.json().catch(() => ({}));
@@ -41,10 +42,32 @@ export const adminApi = {
       method: 'POST',
       body: JSON.stringify({ username, password }),
       headers: {},
+      skipAuth: true,
     });
     localStorage.setItem(ADMIN_STORAGE_KEY, JSON.stringify({ token: res.token, username: res.username }));
     return res;
   },
+  forgotAdminPassword: (payload) =>
+    request('/admin/forgot-password/request', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+      headers: {},
+      skipAuth: true,
+    }),
+  verifyAdminResetCode: (payload) =>
+    request('/admin/forgot-password/verify', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+      headers: {},
+      skipAuth: true,
+    }),
+  resetAdminPassword: (payload) =>
+    request('/admin/forgot-password/reset', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+      headers: {},
+      skipAuth: true,
+    }),
   logout: () => {
     localStorage.removeItem(ADMIN_STORAGE_KEY);
   },
@@ -100,6 +123,12 @@ export const adminApi = {
   deleteProject: (projectId) =>
     request(`/admin/projects/${projectId}`, {
       method: 'DELETE',
+    }),
+  adminProfile: () => request('/admin/profile'),
+  updateAdminProfile: (payload) =>
+    request('/admin/profile', {
+      method: 'PATCH',
+      body: JSON.stringify(payload),
     }),
   createUser: (payload) =>
     request('/auth/register', {

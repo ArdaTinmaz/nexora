@@ -1,31 +1,56 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { Navigate, useNavigate } from 'react-router-dom';
 import styles from './AdminConsole.module.css';
 import { adminApi, getAdminToken } from '../../api/adminApi';
+import ConfirmModal from '../../components/ConfirmModal/ConfirmModal';
 
 // UI-focused Admin Console wired to backend; no mock data kept.
 const AdminConsole = () => {
+  const defaultAdminProfile = { name: 'Admin', username: 'admin', email: '', avatarURL: '' };
+  const maxAvatarSizeBytes = 2 * 1024 * 1024;
+
   const [activeTab, setActiveTab] = useState('users');
   const [token, setToken] = useState(getAdminToken());
-  const [loginForm, setLoginForm] = useState({ username: 'admin', password: 'admin123' });
-  const [loginError, setLoginError] = useState('');
   const [loading, setLoading] = useState(false);
   const [statusMsg, setStatusMsg] = useState('');
+  const [adminProfile, setAdminProfile] = useState(defaultAdminProfile);
+  const [adminProfileDraft, setAdminProfileDraft] = useState({
+    ...defaultAdminProfile,
+    password: '',
+  });
+  const [isAdminProfileOpen, setIsAdminProfileOpen] = useState(false);
+  const [adminProfileMsg, setAdminProfileMsg] = useState('');
 
   const [users, setUsers] = useState([]);
   const [teams, setTeams] = useState([]);
   const [projects, setProjects] = useState([]);
   const [editingUserId, setEditingUserId] = useState(null);
-  const [userRoleDraft, setUserRoleDraft] = useState({});
-  const [assignDraft, setAssignDraft] = useState({});
-  const [newUser, setNewUser] = useState({ name: '', email: '', password: '' });
+  const [userDraft, setUserDraft] = useState({
+    role: 'developer',
+    status: 'Active',
+    skills: [],
+    languages: [],
+    experienceYears: 0,
+  });
+  const [userSkillInput, setUserSkillInput] = useState('');
+  const [userAssignDraft, setUserAssignDraft] = useState({ teamId: '', role: 'developer' });
+  const [newUser, setNewUser] = useState({ name: '', email: '', password: '', avatarURL: '' });
   const [projectModal, setProjectModal] = useState(null);
   const [projectDraft, setProjectDraft] = useState({ name: '', ownerId: '', ownerName: '', status: '' });
   const [assignProjectDraft, setAssignProjectDraft] = useState({ teamId: '' });
   const [assignMode, setAssignMode] = useState('add');
+  const [projectToDelete, setProjectToDelete] = useState(null);
+  const [projectSearch, setProjectSearch] = useState('');
+  const [teamSearch, setTeamSearch] = useState('');
+  const [teamToDelete, setTeamToDelete] = useState(null);
+  const [userSearch, setUserSearch] = useState('');
   const [teamModal, setTeamModal] = useState(null);
   const [teamDraft, setTeamDraft] = useState({ name: '', leaderId: '' });
   const [memberDraft, setMemberDraft] = useState({ userId: '', role: 'developer' });
   const [memberMode, setMemberMode] = useState('add');
+  const avatarInputRef = useRef(null);
+  const adminAvatarInputRef = useRef(null);
+  const navigate = useNavigate();
 
   const userNameMap = useMemo(() => {
     const map = {};
@@ -35,6 +60,18 @@ const AdminConsole = () => {
     return map;
   }, [users]);
 
+  const teamLeadOptions = useMemo(
+    () =>
+      users.filter((u) => String(u?.meta?.role || '').toLowerCase() === 'team_leader'),
+    [users]
+  );
+
+  const projectOwnerOptions = useMemo(
+    () =>
+      users.filter((u) => String(u?.meta?.role || '').toLowerCase() === 'product_manager'),
+    [users]
+  );
+
   const projectNameMap = useMemo(() => {
     const map = {};
     projects.forEach((p) => {
@@ -43,17 +80,140 @@ const AdminConsole = () => {
     return map;
   }, [projects]);
 
+  const getBackendOrigin = () => {
+    const apiBase = process.env.REACT_APP_API_URL || 'http://localhost:5001/api';
+    return apiBase.replace(/\/api$/, '');
+  };
+
+  const getAvatarSrc = (user) => {
+    if (!user?.avatarURL) return null;
+    if (user.avatarURL.startsWith('http')) return user.avatarURL;
+    return `${getBackendOrigin()}${user.avatarURL}`;
+  };
+
+  const normalizeStatus = (status) =>
+    String(status || '').toLowerCase() === 'passive' ? 'Passive' : 'Active';
+
+  const formatRoleLabel = (role) => {
+    if (!role) return '—';
+    const text = String(role)
+      .replace(/_/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+    if (!text) return '—';
+    return text.replace(/\b\w/g, (char) => char.toUpperCase());
+  };
+
+  const openAdminProfileModal = async () => {
+    let baseProfile = adminProfile;
+    if (token) {
+      try {
+        const profile = await adminApi.adminProfile();
+        if (profile) {
+          baseProfile = {
+            name: profile.name || 'Admin',
+            username: profile.username || 'admin',
+            email: profile.email || '',
+            avatarURL: profile.avatarURL || '',
+          };
+          setAdminProfile(baseProfile);
+        }
+      } catch (_) {
+        // ignore
+      }
+    }
+    setAdminProfileDraft({
+      name: baseProfile.name || 'Admin',
+      username: baseProfile.username || 'admin',
+      email: baseProfile.email || '',
+      avatarURL: baseProfile.avatarURL || '',
+      password: '',
+    });
+    setAdminProfileMsg('');
+    setIsAdminProfileOpen(true);
+  };
+
+  const saveAdminProfile = async () => {
+    try {
+      setLoading(true);
+      setAdminProfileMsg('');
+      const payload = {
+        name: adminProfileDraft.name?.trim(),
+        username: adminProfileDraft.username?.trim(),
+        email: adminProfileDraft.email?.trim(),
+        avatarURL: adminProfileDraft.avatarURL || '',
+      };
+      if (adminProfileDraft.password) {
+        payload.password = adminProfileDraft.password;
+      }
+      const updated = await adminApi.updateAdminProfile(payload);
+      let nextProfile = {
+        name: updated?.name ?? payload.name ?? adminProfile.name ?? 'Admin',
+        username: updated?.username ?? payload.username ?? adminProfile.username ?? 'admin',
+        email: updated?.email ?? payload.email ?? adminProfile.email ?? '',
+        avatarURL: updated?.avatarURL ?? payload.avatarURL ?? adminProfile.avatarURL ?? '',
+      };
+      try {
+        const fresh = await adminApi.adminProfile();
+        if (fresh) {
+          nextProfile = {
+            name: fresh.name || nextProfile.name,
+            username: fresh.username || nextProfile.username,
+            email: fresh.email || nextProfile.email,
+            avatarURL: fresh.avatarURL || nextProfile.avatarURL,
+          };
+        }
+      } catch (_) {
+        // ignore
+      }
+      setAdminProfile(nextProfile);
+      if (adminAvatarInputRef.current) {
+        adminAvatarInputRef.current.value = '';
+      }
+      setAdminProfileDraft((prev) => ({ ...prev, password: '' }));
+      setAdminProfileMsg('Admin profile updated.');
+    } catch (err) {
+      const message = err.message || 'Update failed.';
+      const translated =
+        message.includes('Şifre') || message.includes('Password')
+          ? 'Password must be at least 8 characters and include 1 number and 1 uppercase letter.'
+          : message.includes('Username')
+            ? 'Username is required.'
+            : message.includes('Email')
+              ? 'Please enter a valid email address.'
+              : message.includes('Name')
+                ? 'Name is required.'
+                : 'Update failed.';
+      setAdminProfileMsg(translated);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const loadData = async () => {
     if (!token) return;
     try {
       setLoading(true);
-      const [u, t, p] = await Promise.all([adminApi.users(), adminApi.teams(), adminApi.projects()]);
+      const [u, t, p, profile] = await Promise.all([
+        adminApi.users(),
+        adminApi.teams(),
+        adminApi.projects(),
+        adminApi.adminProfile(),
+      ]);
       setUsers(u || []);
       setTeams(t || []);
       setProjects(p || []);
+      if (profile) {
+        setAdminProfile({
+          name: profile.name || 'Admin',
+          username: profile.username || 'admin',
+          email: profile.email || '',
+          avatarURL: profile.avatarURL || '',
+        });
+      }
       setStatusMsg('');
     } catch (err) {
-      setLoginError(err.message);
+      setStatusMsg(err.message);
     } finally {
       setLoading(false);
     }
@@ -63,26 +223,13 @@ const AdminConsole = () => {
     loadData();
   }, [token]);
 
-  const handleLogin = async (e) => {
-    e?.preventDefault();
-    try {
-      setLoginError('');
-      setLoading(true);
-      const res = await adminApi.login(loginForm);
-      setToken(res.token);
-    } catch (err) {
-      setLoginError(err.message);
-    } finally {
-      setLoading(false);
-    }
-  };
-
   const handleLogout = () => {
     adminApi.logout();
     setToken(null);
     setUsers([]);
     setTeams([]);
     setProjects([]);
+    navigate('/admin/login');
   };
 
   const handleCreateUser = async (e) => {
@@ -91,12 +238,38 @@ const AdminConsole = () => {
       setStatusMsg('Name, email ve password zorunlu');
       return;
     }
+    const email = newUser.email.trim();
+    const password = newUser.password;
+    const isEmailValid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+    if (!isEmailValid) {
+      setStatusMsg('Geçerli bir e-posta adresi giriniz');
+      return;
+    }
+    const hasUppercase = /[A-Z]/.test(password);
+    const hasLowercase = /[a-z]/.test(password);
+    const hasNumber = /[0-9]/.test(password);
+    if (password.length < 8 || !hasUppercase || !hasLowercase || !hasNumber) {
+      setStatusMsg('Şifre en az 8 karakter olmalı, en az bir rakam ve en az bir büyük harf içermelidir');
+      return;
+    }
     try {
       setLoading(true);
-      await adminApi.createUser(newUser);
-      setNewUser({ name: '', email: '', password: '' });
+      const payload = {
+        name: newUser.name.trim(),
+        email,
+        password: newUser.password,
+      };
+      if (newUser.avatarURL?.trim()) {
+        payload.avatarURL = newUser.avatarURL.trim();
+      }
+      await adminApi.createUser(payload);
+      setNewUser({ name: '', email: '', password: '', avatarURL: '' });
+      if (avatarInputRef.current) {
+        avatarInputRef.current.value = '';
+      }
       setStatusMsg('User created');
       await loadData();
+      setEditingUserId(null);
     } catch (err) {
       setStatusMsg(err.message);
     } finally {
@@ -104,14 +277,74 @@ const AdminConsole = () => {
     }
   };
 
-  const handleUpdateRole = async (userId) => {
-    const role = userRoleDraft[userId];
-    if (!role) return;
+  const handleAvatarFile = ({ file, onSuccess, setMessage }) => {
+    if (!file) return false;
+    if (file.size > maxAvatarSizeBytes) {
+      const msg = 'Avatar file is too large (max 2MB).';
+      if (setMessage) {
+        setMessage(msg);
+      } else {
+        setStatusMsg(msg);
+      }
+      return false;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (typeof reader.result === 'string') {
+        onSuccess(reader.result);
+      }
+    };
+    reader.readAsDataURL(file);
+    return true;
+  };
+
+  const openUserModal = (user) => {
+    const meta = user?.meta || {};
+    const statusValue = normalizeStatus(meta.status || user.status || 'Active');
+    setEditingUserId(user.id);
+    setUserDraft({
+      role: meta.role || user.role || 'developer',
+      status: statusValue,
+      skills: Array.isArray(meta.skills) ? [...meta.skills] : [],
+      languages: Array.isArray(meta.languages) ? [...meta.languages] : [],
+      experienceYears: Number(meta.experienceYears) || 0,
+    });
+    setUserSkillInput('');
+    setUserAssignDraft({ teamId: '', role: 'developer' });
+  };
+
+  const addSkill = () => {
+    const nextSkill = userSkillInput.trim();
+    if (!nextSkill) return;
+    setUserDraft((prev) => {
+      const exists = prev.skills.some((skill) => skill.toLowerCase() === nextSkill.toLowerCase());
+      if (exists) return prev;
+      return { ...prev, skills: [...prev.skills, nextSkill] };
+    });
+    setUserSkillInput('');
+  };
+
+  const removeSkill = (skillToRemove) => {
+    setUserDraft((prev) => ({
+      ...prev,
+      skills: prev.skills.filter((skill) => skill !== skillToRemove),
+    }));
+  };
+
+  const handleSaveUser = async () => {
+    if (!editingUserId || editingUserId === 'create') return;
     try {
       setLoading(true);
-      await adminApi.updateUserMeta(userId, { role });
-      setStatusMsg('Role updated');
+      await adminApi.updateUserMeta(editingUserId, {
+        role: userDraft.role,
+        languages: userDraft.languages,
+        experienceYears: userDraft.experienceYears,
+        skills: userDraft.skills,
+        status: userDraft.status || 'Active',
+      });
+      setStatusMsg('User updated');
       await loadData();
+      setEditingUserId(null);
     } catch (err) {
       setStatusMsg(err.message);
     } finally {
@@ -119,16 +352,18 @@ const AdminConsole = () => {
     }
   };
 
-  const handleAssignTeam = async (userId) => {
-    const draft = assignDraft[userId] || {};
+  const handleAssignTeam = async () => {
+    if (!editingUserId || editingUserId === 'create') return;
+    const draft = userAssignDraft || {};
     if (!draft.teamId || !draft.role) {
       setStatusMsg('Team ve role seçin');
       return;
     }
     try {
       setLoading(true);
-      await adminApi.addTeamMember(draft.teamId, { userId, role: draft.role });
+      await adminApi.addTeamMember(draft.teamId, { userId: editingUserId, role: draft.role });
       setStatusMsg('Team assignment ok');
+      setUserAssignDraft({ teamId: '', role: 'developer' });
       await loadData();
     } catch (err) {
       setStatusMsg(err.message);
@@ -145,6 +380,55 @@ const AdminConsole = () => {
     'developer',
     'designer',
   ];
+
+  const memberOptions = useMemo(() => {
+    if (!teamModal?.team || teamModal.mode !== 'members') return [];
+    const memberIds = (teamModal.team.members || []).map((m) => m.userId);
+    const leaderId = teamModal.team.leaderId;
+    const memberRoleMap = (teamModal.team.members || []).reduce((acc, m) => {
+      acc[m.userId] = m.role;
+      return acc;
+    }, {});
+    if (memberMode === 'delete') {
+      return users
+        .filter(
+          (u) =>
+            memberIds.includes(u.id) &&
+            u.id !== leaderId &&
+            memberRoleMap[u.id] !== 'team_leader'
+        )
+        .map((u) => ({
+          ...u,
+          role: memberRoleMap[u.id] || u.meta?.role || 'developer',
+        }));
+    }
+    const hasLead = (teamModal.team.members || []).some((m) => m.role === 'team_leader');
+    return users
+      .filter((u) => !memberIds.includes(u.id))
+      .map((u) => ({
+        ...u,
+        role: u.meta?.role || 'developer',
+      }))
+      .filter((u) => !(hasLead && u.role === 'team_leader'));
+  }, [teamModal, memberMode, users]);
+
+  useEffect(() => {
+    if (!teamModal?.team || teamModal.mode !== 'members') return;
+    if (!memberOptions.length) {
+      if (memberDraft.userId) {
+        setMemberDraft((p) => ({ ...p, userId: '' }));
+      }
+      return;
+    }
+    const selected = memberOptions.find((u) => u.id === memberDraft.userId);
+    if (!selected) {
+      setMemberDraft((p) => ({ ...p, userId: memberOptions[0].id, role: memberOptions[0].role }));
+      return;
+    }
+    if (selected.role && selected.role !== memberDraft.role) {
+      setMemberDraft((p) => ({ ...p, role: selected.role }));
+    }
+  }, [teamModal, memberMode, memberOptions, memberDraft.userId]);
 
   const handleCreateTeam = async () => {
     if (!teamDraft.name || !teamDraft.leaderId) {
@@ -221,6 +505,21 @@ const AdminConsole = () => {
     }
   };
 
+  const confirmDeleteProject = async () => {
+    if (!projectToDelete) return;
+    try {
+      setLoading(true);
+      await adminApi.deleteProject(projectToDelete.id);
+      setStatusMsg('Project deleted');
+      await loadData();
+    } catch (err) {
+      setStatusMsg(err.message);
+    } finally {
+      setLoading(false);
+      setProjectToDelete(null);
+    }
+  };
+
   const handleTeamAssignAction = async () => {
     if (!assignProjectDraft.teamId || !projectModal?.id) return;
     if (assignMode === 'delete') {
@@ -250,135 +549,379 @@ const AdminConsole = () => {
     }
   };
 
+  const confirmDeleteTeam = async () => {
+    if (!teamToDelete) return;
+    try {
+      setLoading(true);
+      await adminApi.deleteTeam(teamToDelete.id);
+      setStatusMsg('Team deleted');
+      await loadData();
+    } catch (err) {
+      setStatusMsg(err.message);
+    } finally {
+      setLoading(false);
+      setTeamToDelete(null);
+    }
+  };
+
   const renderUsers = () => (
     <>
       <div className={styles.sectionHeader}>
         <div>
           <h2>Users</h2>
-          <p>Manage roles, statuses, and team assignments.</p>
         </div>
-        <button className={`${styles.btn} ${styles.btnAccent}`} onClick={() => setEditingUserId('create')}>
-          + Create User
-        </button>
-      </div>
-      {editingUserId === 'create' && (
-        <form className={styles.inlinePanel} onSubmit={handleCreateUser}>
+        <div className={styles.sectionActions}>
           <input
-            className={styles.input}
-            placeholder="Name"
-            value={newUser.name}
-            onChange={(e) => setNewUser((prev) => ({ ...prev, name: e.target.value }))}
+            className={styles.search}
+            placeholder="Search users..."
+            aria-label="Search users"
+            value={userSearch}
+            onChange={(e) => setUserSearch(e.target.value)}
           />
-          <input
-            className={styles.input}
-            placeholder="Email"
-            value={newUser.email}
-            onChange={(e) => setNewUser((prev) => ({ ...prev, email: e.target.value }))}
-          />
-          <input
-            className={styles.input}
-            type="password"
-            placeholder="Password"
-            value={newUser.password}
-            onChange={(e) => setNewUser((prev) => ({ ...prev, password: e.target.value }))}
-          />
-          <button type="submit" className={styles.btnAccent} disabled={loading}>
-            {loading ? 'Creating...' : 'Create'}
+          <button className={`${styles.btn} ${styles.btnAccent}`} onClick={() => setEditingUserId('create')}>
+            + Create User
           </button>
-        </form>
-      )}
+        </div>
+      </div>
       <div className={styles.grid}>
-        {users.length === 0 ? (
+        {(users || []).filter((user) => {
+          const q = userSearch.trim().toLowerCase();
+          if (q.length < 2) return true;
+          return (user.name || '').toLowerCase().includes(q);
+        }).length === 0 ? (
           <div className={styles.emptyCard}>No users to display.</div>
         ) : (
-          users.map((user) => (
-            <div key={user.id} className={styles.card}>
-              <div className={styles.avatar}>{user.name?.slice(0, 1)}</div>
-              <div className={styles.cardBody}>
-                <div className={styles.cardTitle}>{user.name}</div>
-                <div className={styles.muted}>{user?.meta?.role || user.role || '—'}</div>
-                <div className={`${styles.tag} ${styles.tagSuccess}`}>
-                  {user.meta?.status || user.status || 'active'}
+          users
+            .filter((user) => {
+              const q = userSearch.trim().toLowerCase();
+              if (q.length < 2) return true;
+              return (user.name || '').toLowerCase().includes(q);
+            })
+            .map((user) => {
+            const statusValue = normalizeStatus(user.meta?.status || user.status);
+            const skills = Array.isArray(user.meta?.skills) ? user.meta.skills : [];
+            const visibleSkills = skills.slice(0, 5);
+            const hasMoreSkills = skills.length > 5;
+            const avatarSrc = getAvatarSrc(user);
+            return (
+              <div key={user.id} className={`${styles.card} ${styles.userCard}`}>
+                <div className={`${styles.avatar} ${styles.userAvatar}`}>
+                  {avatarSrc ? (
+                    <img className={styles.avatarImg} src={avatarSrc} alt={`${user.name} avatar`} />
+                  ) : (
+                    user.name?.slice(0, 1)
+                  )}
                 </div>
-                <div className={styles.actions}>
-                  <button className={styles.btnGhost} onClick={() => setEditingUserId(user.id)}>
-                    Edit
-                  </button>
-                  <button className={styles.btnGhost} onClick={() => setEditingUserId(user.id)}>
-                    Assign team
-                  </button>
-                  <button className={styles.btnGhost} onClick={() => setEditingUserId(user.id)}>
-                    Change role
-                  </button>
-                </div>
-                {editingUserId === user.id && (
-                  <div className={styles.inlinePanel}>
-                    <div className={styles.inlineRow}>
-                      <label>Role</label>
-                      <select
-                        className={styles.select}
-                        value={userRoleDraft[user.id] || user?.meta?.role || user.role || ''}
-                        onChange={(e) =>
-                          setUserRoleDraft((prev) => ({ ...prev, [user.id]: e.target.value }))
-                        }
-                      >
-                        <option value="">Select role</option>
-                        {roleOptions.map((r) => (
-                          <option key={r} value={r}>
-                            {r}
-                          </option>
-                        ))}
-                      </select>
-                      <button className={styles.btnGhost} onClick={() => handleUpdateRole(user.id)}>
-                        Save role
-                      </button>
+                <div className={`${styles.cardBody} ${styles.userInfo}`}>
+                  <div className={styles.userMeta}>
+                    <div className={styles.metaItem}>
+                      <span className={styles.metaKey}>Name:</span>
+                      <span className={styles.metaValue}>{user.name}</span>
                     </div>
-                    <div className={styles.inlineRow}>
-                      <label>Assign to team</label>
-                      <select
-                        className={styles.select}
-                        value={assignDraft[user.id]?.teamId || ''}
-                        onChange={(e) =>
-                          setAssignDraft((prev) => ({
-                            ...prev,
-                            [user.id]: { ...(prev[user.id] || {}), teamId: e.target.value },
-                          }))
-                        }
-                      >
-                <option value="">Select Team</option>
-                {teams.map((team) => (
-                  <option key={team.id} value={team.id}>
-                    {team.name}
-                  </option>
-                ))}
-                      </select>
-                      <select
-                        className={styles.select}
-                        value={assignDraft[user.id]?.role || 'developer'}
-                        onChange={(e) =>
-                          setAssignDraft((prev) => ({
-                            ...prev,
-                            [user.id]: { ...(prev[user.id] || {}), role: e.target.value },
-                          }))
-                        }
-                      >
-                        {roleOptions.map((r) => (
-                          <option key={r} value={r}>
-                            {r}
-                          </option>
-                        ))}
-                      </select>
-                      <button className={styles.btnGhost} onClick={() => handleAssignTeam(user.id)}>
-                        Add to team
-                      </button>
+                    <div className={styles.metaItem}>
+                      <span className={styles.metaKey}>Role:</span>
+                      <span className={styles.metaValue}>
+                        {formatRoleLabel(user?.meta?.role || user.role)}
+                      </span>
+                    </div>
+                    <div className={styles.metaItem}>
+                      <span className={styles.metaKey}>Status:</span>
+                      <span className={styles.metaValue}>
+                        <span
+                          className={`${styles.tag} ${
+                            statusValue === 'Passive' ? styles.tagDanger : styles.tagSuccess
+                          }`}
+                        >
+                          {statusValue}
+                        </span>
+                      </span>
                     </div>
                   </div>
-                )}
+                </div>
+                <div className={styles.userSkillsRow}>
+                  <span className={styles.metaKey}>Skills:</span>
+                  <div className={styles.userSkillsList}>
+                    {visibleSkills.length > 0 ? (
+                      <>
+                        {visibleSkills.map((skill) => (
+                          <span key={`${user.id}-${skill}`} className={styles.chip}>
+                            {skill}
+                          </span>
+                        ))}
+                        {hasMoreSkills && <span className={styles.chip}>...</span>}
+                      </>
+                    ) : (
+                      <span className={styles.muted}>—</span>
+                    )}
+                  </div>
+                </div>
+                <div className={styles.userCardActions}>
+                  <button className={styles.btnGhost} onClick={() => openUserModal(user)}>
+                    Edit
+                  </button>
+                </div>
               </div>
-            </div>
-          ))
+            );
+          })
         )}
       </div>
+      {editingUserId && editingUserId !== 'create' && (
+        <div className={styles.modalOverlay}>
+          <div className={styles.modal}>
+            <div className={`${styles.modalHeader} ${styles.modalHeaderCentered}`}>
+              <div className={styles.modalHeaderLeft}>
+                <div className={styles.cardTitle}>User details</div>
+              </div>
+              <div className={styles.modalHeaderCenter}>
+                <div className={styles.modalHeaderName}>
+                  {users.find((u) => u.id === editingUserId)?.name || 'User'}
+                </div>
+              </div>
+              <div className={styles.modalHeaderRight}>
+                <button className={styles.btnGhost} onClick={() => setEditingUserId(null)}>
+                  Close
+                </button>
+              </div>
+            </div>
+            <div className={styles.modalGrid}>
+              <label>
+                Role
+                <select
+                  className={styles.select}
+                  value={userDraft.role}
+                  onChange={(e) => setUserDraft((prev) => ({ ...prev, role: e.target.value }))}
+                >
+                  <option value="">Select role</option>
+                  {roleOptions.map((r) => (
+                    <option key={r} value={r}>
+                      {formatRoleLabel(r)}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                Skills
+                <div className={styles.skillInputRow}>
+                  <input
+                    className={`${styles.input} ${styles.skillInput}`}
+                    placeholder="Add skill"
+                    value={userSkillInput}
+                    onChange={(e) => setUserSkillInput(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        addSkill();
+                      }
+                    }}
+                  />
+                  <button type="button" className={styles.btnGhostSmall} onClick={addSkill}>
+                    Add
+                  </button>
+                </div>
+              </label>
+            </div>
+            <div className={styles.chipRow}>
+              {userDraft.skills.length ? (
+                userDraft.skills.map((skill) => (
+                  <button
+                    key={`skill-${skill}`}
+                    type="button"
+                    className={styles.chip}
+                    onClick={() => removeSkill(skill)}
+                    aria-label={`Remove ${skill}`}
+                  >
+                    {skill} x
+                  </button>
+                ))
+              ) : (
+                <span className={styles.muted}>No skills added</span>
+              )}
+            </div>
+            <div className={styles.inlineRow}>
+              <div className={styles.toggleGroup}>
+                <span>Status</span>
+                <button
+                  type="button"
+                  className={`${styles.toggle} ${
+                    userDraft.status === 'Passive' ? styles.toggleOff : styles.toggleOn
+                  }`}
+                  onClick={() =>
+                    setUserDraft((prev) => ({
+                      ...prev,
+                      status: prev.status === 'Passive' ? 'Active' : 'Passive',
+                    }))
+                  }
+                >
+                  <span className={styles.toggleText}>
+                    {userDraft.status === 'Passive' ? 'Passive' : 'Active'}
+                  </span>
+                  <span
+                    className={`${styles.toggleKnob} ${
+                      userDraft.status === 'Passive' ? styles.knobOff : styles.knobOn
+                    }`}
+                  />
+                </button>
+              </div>
+            </div>
+            <div className={styles.inlinePanel}>
+              <div className={styles.assignRow}>
+                <label>
+                  Assign to team
+                  <select
+                    className={styles.select}
+                    value={userAssignDraft.teamId}
+                    onChange={(e) =>
+                      setUserAssignDraft((prev) => ({ ...prev, teamId: e.target.value }))
+                    }
+                  >
+                    <option value="">Select Team</option>
+                    {teams.map((team) => (
+                      <option key={team.id} value={team.id}>
+                        {team.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  Team role
+                  <select
+                    className={styles.select}
+                    value={userAssignDraft.role}
+                    onChange={(e) =>
+                      setUserAssignDraft((prev) => ({ ...prev, role: e.target.value }))
+                    }
+                  >
+                    {roleOptions.map((r) => (
+                      <option key={r} value={r}>
+                        {formatRoleLabel(r)}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <button type="button" className={styles.btnGhost} onClick={handleAssignTeam}>
+                  Add to team
+                </button>
+              </div>
+            </div>
+            <div className={styles.actionsEnd}>
+              <button className={styles.btnPrimary} onClick={handleSaveUser} disabled={loading}>
+                {loading ? 'Saving...' : 'Save Changes'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {editingUserId === 'create' && (
+        <div className={styles.modalOverlay}>
+          <div className={styles.modal}>
+            <div className={styles.modalHeader}>
+              <div>
+                <div className={styles.cardTitle}>Create User</div>
+                <div className={`${styles.muted} ${styles.createSubtitle}`}>
+                  Add a new user with optional avatar.
+                </div>
+              </div>
+              <button className={styles.btnGhost} onClick={() => setEditingUserId(null)}>
+                Close
+              </button>
+            </div>
+            <form onSubmit={handleCreateUser}>
+              <div className={styles.modalGrid}>
+                <label>
+                  Name
+                  <input
+                    className={styles.input}
+                    placeholder="Name"
+                    value={newUser.name}
+                    onChange={(e) => setNewUser((prev) => ({ ...prev, name: e.target.value }))}
+                  />
+                </label>
+                <label>
+                  Email
+                  <input
+                    className={styles.input}
+                    placeholder="Email"
+                    value={newUser.email}
+                    onChange={(e) => setNewUser((prev) => ({ ...prev, email: e.target.value }))}
+                  />
+                </label>
+                <label>
+                  Password
+                  <input
+                    className={styles.input}
+                    type="password"
+                    placeholder="Password"
+                    value={newUser.password}
+                    onChange={(e) => setNewUser((prev) => ({ ...prev, password: e.target.value }))}
+                  />
+                </label>
+                <label>
+                  Avatar (Optional)
+                  <div className={styles.uploadField}>
+                    <input
+                      ref={avatarInputRef}
+                      className={styles.fileInput}
+                      type="file"
+                      accept="image/*"
+                      id="admin-avatar-upload"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      if (!file) {
+                        setNewUser((prev) => ({ ...prev, avatarURL: '' }));
+                        return;
+                      }
+                      const ok = handleAvatarFile({
+                        file,
+                        onSuccess: (dataUrl) =>
+                          setNewUser((prev) => ({
+                            ...prev,
+                            avatarURL: dataUrl,
+                          })),
+                      });
+                      if (!ok && avatarInputRef.current) {
+                        avatarInputRef.current.value = '';
+                      }
+                    }}
+                  />
+                    <label htmlFor="admin-avatar-upload" className={styles.uploadButton}>
+                      Upload avatar
+                    </label>
+                    {newUser.avatarURL ? (
+                      <div className={styles.uploadPreviewWrap}>
+                        <img
+                          className={styles.uploadPreview}
+                          src={newUser.avatarURL}
+                          alt="Avatar preview"
+                        />
+                        <button
+                          type="button"
+                          className={styles.uploadRemove}
+                          onClick={() => {
+                            setNewUser((prev) => ({ ...prev, avatarURL: '' }));
+                            if (avatarInputRef.current) {
+                              avatarInputRef.current.value = '';
+                            }
+                          }}
+                          aria-label="Remove avatar"
+                        >
+                          ×
+                        </button>
+                      </div>
+                    ) : (
+                      <span className={styles.uploadHint}>No file chosen</span>
+                    )}
+                  </div>
+                </label>
+              </div>
+              <div className={styles.actionsEnd}>
+                <button type="submit" className={styles.btnPrimary} disabled={loading}>
+                  {loading ? 'Creating...' : 'Create'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </>
   );
 
@@ -387,28 +930,55 @@ const AdminConsole = () => {
       <div className={styles.sectionHeader}>
         <div>
           <h2>Teams</h2>
-          <p>Create squads and manage members per project.</p>
         </div>
-        <button
-          className={`${styles.btn} ${styles.btnAccent}`}
-          onClick={() => {
-            setTeamModal({ mode: 'create' });
-            setTeamDraft({
-              name: '',
-              leaderId: users[0]?.id || '',
-            });
-          }}
-        >
-          + Create Team
-        </button>
+        <div className={styles.sectionActions}>
+          <input
+            className={styles.search}
+            placeholder="Search teams..."
+            aria-label="Search teams"
+            value={teamSearch}
+            onChange={(e) => setTeamSearch(e.target.value)}
+          />
+          <button
+            className={`${styles.btn} ${styles.btnAccent}`}
+            onClick={() => {
+              setTeamModal({ mode: 'create' });
+              setTeamDraft({
+                name: '',
+                leaderId: teamLeadOptions[0]?.id || '',
+              });
+            }}
+          >
+            + Create Team
+          </button>
+        </div>
       </div>
       <div className={styles.grid}>
-        {teams.length === 0 ? (
+        {(teams || []).filter((team) => {
+          const q = teamSearch.trim().toLowerCase();
+          if (q.length < 2) return true;
+          return (team.name || '').toLowerCase().includes(q);
+        }).length === 0 ? (
           <div className={styles.emptyCard}>No teams to display.</div>
         ) : (
-          teams.map((team) => (
+          teams
+            .filter((team) => {
+              const q = teamSearch.trim().toLowerCase();
+              if (q.length < 2) return true;
+              return (team.name || '').toLowerCase().includes(q);
+            })
+            .map((team) => (
             <div key={team.id} className={styles.card}>
-              <div className={styles.cardTitle}>{team.name}</div>
+              <div className={styles.cardHeader}>
+                <div className={styles.cardTitle}>{team.name}</div>
+                <button
+                  className={styles.iconButton}
+                  title="Delete team"
+                  onClick={() => setTeamToDelete(team)}
+                >
+                  🗑️
+                </button>
+              </div>
               <div className={styles.muted}>
                 Project:{' '}
                 {(() => {
@@ -488,18 +1058,25 @@ const AdminConsole = () => {
                     value={teamDraft.leaderId}
                     onChange={(e) => setTeamDraft((p) => ({ ...p, leaderId: e.target.value }))}
                   >
-                    {users.map((u) => (
-                      <option key={u.id} value={u.id}>
-                        {u.name}
+                    <option value="">Select team lead</option>
+                    {teamLeadOptions.length ? (
+                      teamLeadOptions.map((u) => (
+                        <option key={u.id} value={u.id}>
+                          {u.name || u.email}
+                        </option>
+                      ))
+                    ) : (
+                      <option value="" disabled>
+                        No team leaders
                       </option>
-                    ))}
+                    )}
                   </select>
                 </label>
               </div>
             )}
 
             {teamModal.mode === 'members' && teamModal.team && (
-              <div className={styles.inlinePanel}>
+              <div className={`${styles.inlinePanel} ${styles.membersPanel}`}>
                 <div className={styles.inlineRow}>
                   <div className={styles.sectionLabel}>Add/Delete member</div>
                   <button
@@ -509,11 +1086,39 @@ const AdminConsole = () => {
                       const next = memberMode === 'add' ? 'delete' : 'add';
                       setMemberMode(next);
                       const memberIds = (teamModal.team.members || []).map((m) => m.userId);
-                      const firstMatch =
+                      const leaderId = teamModal.team.leaderId;
+                      const memberRoleMap = (teamModal.team.members || []).reduce((acc, m) => {
+                        acc[m.userId] = m.role;
+                        return acc;
+                      }, {});
+                      const hasLead = (teamModal.team.members || []).some((m) => m.role === 'team_leader');
+                      const nextOptions =
                         next === 'delete'
-                          ? memberIds[0] || ''
-                          : (users.find((u) => !memberIds.includes(u.id))?.id || '');
-                      setMemberDraft((p) => ({ ...p, userId: firstMatch }));
+                          ? users
+                              .filter(
+                                (u) =>
+                                  memberIds.includes(u.id) &&
+                                  u.id !== leaderId &&
+                                  memberRoleMap[u.id] !== 'team_leader'
+                              )
+                              .map((u) => ({
+                                ...u,
+                                role: memberRoleMap[u.id] || u.meta?.role || 'developer',
+                              }))
+                          : users
+                              .filter((u) => !memberIds.includes(u.id))
+                              .map((u) => ({
+                                ...u,
+                                role: u.meta?.role || 'developer',
+                              }))
+                              .filter((u) => !(hasLead && u.role === 'team_leader'));
+                      const firstMatch = nextOptions[0]?.id || '';
+                      const selected = nextOptions.find((u) => u.id === firstMatch);
+                      setMemberDraft((p) => ({
+                        ...p,
+                        userId: firstMatch,
+                        role: selected?.role || p.role,
+                      }));
                     }}
                   >
                     <span className={styles.toggleText}>{memberMode === 'delete' ? 'Delete' : 'Add'}</span>
@@ -526,53 +1131,31 @@ const AdminConsole = () => {
                   <select
                     className={styles.select}
                     value={memberDraft.userId}
-                    onChange={(e) => setMemberDraft((p) => ({ ...p, userId: e.target.value }))}
+                    onChange={(e) => {
+                      const selected = memberOptions.find((u) => u.id === e.target.value);
+                      setMemberDraft((p) => ({
+                        ...p,
+                        userId: e.target.value,
+                        role: selected?.role || p.role,
+                      }));
+                    }}
+                    disabled={!memberOptions.length}
                   >
-                    <option value="">Select member</option>
-                    {(memberMode === 'delete'
-                      ? users.filter((u) =>
-                          (teamModal.team.members || []).some((m) => m.userId === u.id)
-                        )
-                      : users.filter(
-                          (u) => !(teamModal.team.members || []).some((m) => m.userId === u.id)
-                        )
-                    ).map((u) => (
+                    <option value="">{memberOptions.length ? 'Select member' : 'No members'}</option>
+                    {memberOptions.map((u) => (
                       <option key={u.id} value={u.id}>
-                        {u.name}
+                        {u.name || u.email} ({formatRoleLabel(u.role)})
                       </option>
                     ))}
                   </select>
-                  {memberMode === 'add' && (
-                    <select
-                      className={styles.select}
-                      value={memberDraft.role}
-                      onChange={(e) => setMemberDraft((p) => ({ ...p, role: e.target.value }))}
-                    >
-                      {(() => {
-                        const hasLead = (teamModal.team.members || []).some((m) => m.role === 'team_leader');
-                        const availableRoles =
-                          memberMode === 'add' && hasLead
-                            ? roleOptions.filter((r) => r !== 'team_leader')
-                            : roleOptions;
-                        if (memberDraft.role === 'team_leader' && hasLead) {
-                          setMemberDraft((p) => ({ ...p, role: 'developer' }));
-                        }
-                        return availableRoles;
-                      })().map((r) => (
-                        <option key={r} value={r}>
-                          {r}
-                        </option>
-                      ))}
-                    </select>
-                  )}
                 </div>
-                <div className={styles.inlineRow}>
+                <div className={styles.membersSection}>
                   <div className={styles.sectionLabel}>Members</div>
-                  <div className={styles.chipRow}>
+                  <div className={`${styles.chipRow} ${styles.membersGrid}`}>
                     {teamModal.team.members?.length ? (
                       teamModal.team.members.map((m) => (
                         <span key={m.userId} className={styles.chip}>
-                          {userNameMap[m.userId] || m.userId} ({m.role})
+                          {userNameMap[m.userId] || m.userId} ({formatRoleLabel(m.role)})
                         </span>
                       ))
                     ) : (
@@ -580,7 +1163,7 @@ const AdminConsole = () => {
                     )}
                   </div>
                 </div>
-                <div className={styles.actionsEnd}>
+                <div className={styles.membersActions}>
                   <button
                     className={styles.btnPrimary}
                     onClick={async () => {
@@ -627,7 +1210,7 @@ const AdminConsole = () => {
               </div>
             )}
 
-            <div className={styles.actions}>
+            <div className={styles.actionsEnd}>
               {teamModal.mode === 'create' && (
                 <button className={styles.btnPrimary} onClick={handleCreateTeam} disabled={loading}>
                   {loading ? 'Creating...' : 'Create team'}
@@ -664,6 +1247,15 @@ const AdminConsole = () => {
           </div>
         </div>
       )}
+      <ConfirmModal
+        isOpen={Boolean(teamToDelete)}
+        title="Delete team"
+        message={`Are you sure you want to delete "${teamToDelete?.name || 'this team'}"?`}
+        confirmLabel="Delete"
+        cancelLabel="Cancel"
+        onCancel={() => setTeamToDelete(null)}
+        onConfirm={confirmDeleteTeam}
+      />
     </>
   );
 
@@ -672,48 +1264,55 @@ const AdminConsole = () => {
       <div className={styles.sectionHeader}>
         <div>
           <h2>Projects</h2>
-          <p>Oversee project ownership and associated teams.</p>
         </div>
-        <button
-          className={`${styles.btn} ${styles.btnAccent}`}
-          onClick={() => {
-            setProjectModal({ id: null });
-            const firstId = users[0]?.id || '';
-            setProjectDraft({
-              name: '',
-              ownerId: firstId,
-              ownerName: userNameMap[firstId] || '',
-              status: 'Active',
-            });
-            setAssignProjectDraft({ teamId: '' });
-          }}
-        >
-          + Create Project
-        </button>
+        <div className={styles.sectionActions}>
+          <input
+            className={styles.search}
+            placeholder="Search projects..."
+            aria-label="Search projects"
+            value={projectSearch}
+            onChange={(e) => setProjectSearch(e.target.value)}
+          />
+          <button
+            className={`${styles.btn} ${styles.btnAccent}`}
+            onClick={() => {
+              setProjectModal({ id: null });
+              const firstId = users[0]?.id || '';
+              setProjectDraft({
+                name: '',
+                ownerId: firstId,
+                ownerName: userNameMap[firstId] || '',
+                status: 'Active',
+              });
+              setAssignProjectDraft({ teamId: '' });
+            }}
+          >
+            + Create Project
+          </button>
+        </div>
       </div>
       <div className={styles.grid}>
-        {projects.length === 0 ? (
+        {(projects || []).filter((project) => {
+          const q = projectSearch.trim().toLowerCase();
+          if (q.length < 2) return true;
+          return (project.name || '').toLowerCase().includes(q);
+        }).length === 0 ? (
           <div className={styles.emptyCard}>No projects to display.</div>
         ) : (
-          projects.map((project) => (
+          projects
+            .filter((project) => {
+              const q = projectSearch.trim().toLowerCase();
+              if (q.length < 2) return true;
+              return (project.name || '').toLowerCase().includes(q);
+            })
+            .map((project) => (
             <div key={project.id} className={styles.card}>
               <div className={styles.cardHeader}>
                 <div className={styles.cardTitle}>{project.name}</div>
                 <button
                   className={styles.iconButton}
                   title="Delete project"
-                  onClick={async () => {
-                    try {
-                      setLoading(true);
-                      await adminApi.deleteProject(project.id);
-                      setStatusMsg('Project deleted');
-                      await loadData();
-                    } catch (err) {
-                      setStatusMsg(err.message);
-                    } finally {
-                      setLoading(false);
-                    }
-                  }}
+                  onClick={() => setProjectToDelete(project)}
                 >
                   🗑️
                 </button>
@@ -789,11 +1388,18 @@ const AdminConsole = () => {
                   value={projectDraft.ownerId}
                   onChange={(e) => setProjectDraft((p) => ({ ...p, ownerId: e.target.value }))}
                 >
-                  {users.map((u) => (
-                    <option key={u.id} value={u.id}>
-                      {u.name}
+                  <option value="">Select owner</option>
+                  {projectOwnerOptions.length ? (
+                    projectOwnerOptions.map((u) => (
+                      <option key={u.id} value={u.id}>
+                        {u.name || u.email}
+                      </option>
+                    ))
+                  ) : (
+                    <option value="" disabled>
+                      No product managers
                     </option>
-                  ))}
+                  )}
                 </select>
               </label>
             </div>
@@ -880,7 +1486,7 @@ const AdminConsole = () => {
                 </div>
               </div>
             </div>
-            <div className={styles.actions}>
+            <div className={styles.actionsEnd}>
               {projectModal?.id ? (
                 <button
                   className={styles.btnPrimary}
@@ -939,13 +1545,26 @@ const AdminConsole = () => {
           </div>
         </div>
       )}
+      <ConfirmModal
+        isOpen={Boolean(projectToDelete)}
+        title="Delete project"
+        message={`Are you sure you want to delete "${projectToDelete?.name || 'this project'}"?`}
+        confirmLabel="Delete"
+        cancelLabel="Cancel"
+        onCancel={() => setProjectToDelete(null)}
+        onConfirm={confirmDeleteProject}
+      />
     </>
   );
+
+  if (!token) {
+    return <Navigate to="/admin/login" replace />;
+  }
 
   return (
     <div className={styles.shell}>
       <aside className={styles.sidebar}>
-        <div className={styles.brand}>NEXORA Admin</div>
+        <div className={styles.brand}>NEXORA</div>
         <nav className={styles.nav}>
           <button
             className={`${styles.navItem} ${activeTab === 'users' ? styles.navActive : ''}`}
@@ -966,6 +1585,30 @@ const AdminConsole = () => {
             <span className={styles.navIcon}>📁</span> Projects
           </button>
         </nav>
+        <div className={styles.sidebarFooter}>
+          <button type="button" className={styles.profileCard} onClick={openAdminProfileModal}>
+            <div className={styles.profileAvatar}>
+              {adminProfile.avatarURL ? (
+                <img
+                  className={styles.profileAvatarImg}
+                  src={adminProfile.avatarURL}
+                  alt="Admin avatar"
+                  onError={() => {
+                    setAdminProfile((prev) => ({ ...prev, avatarURL: '' }));
+                  }}
+                />
+              ) : (
+                <span className={styles.profileAvatarEmoji}>👤</span>
+              )}
+            </div>
+            <div className={styles.profileMeta}>
+              <div className={styles.profileName}>
+                {adminProfile.name || adminProfile.username || 'Admin'}
+              </div>
+              <div className={styles.profileHint}>Profile</div>
+            </div>
+          </button>
+        </div>
       </aside>
 
       <main className={styles.main}>
@@ -975,52 +1618,148 @@ const AdminConsole = () => {
             <p className={styles.muted}>Control users, teams, and projects in one calm view.</p>
           </div>
           <div className={styles.headerTools}>
-            <input className={styles.search} placeholder="Search..." aria-label="Search admin" />
             {token ? (
-              <button className={styles.btnGhost} onClick={handleLogout}>
+              <button className={`${styles.btnGhost} ${styles.btnLogout}`} onClick={handleLogout}>
                 Logout
               </button>
             ) : null}
           </div>
         </header>
 
-        {!token ? (
-          <section className={styles.content}>
-            <form className={styles.loginPanel} onSubmit={handleLogin}>
+        <section className={styles.content}>
+          {activeTab === 'users' && renderUsers()}
+          {activeTab === 'teams' && renderTeams()}
+          {activeTab === 'projects' && renderProjects()}
+          {statusMsg && <div className={styles.statusText}>{statusMsg}</div>}
+        </section>
+      </main>
+
+      {isAdminProfileOpen && (
+        <div className={styles.modalOverlay}>
+          <div className={styles.modal}>
+            <div className={styles.modalHeader}>
               <div>
-                <div className={styles.cardTitle}>Admin Login</div>
-                <p className={styles.muted}>Kayıtlı admin bilgisiyle giriş yapın.</p>
+                <div className={styles.cardTitle}>Admin Profile</div>
+                <div className={`${styles.muted} ${styles.createSubtitle}`}>
+                  Update admin name, email, password, and avatar.
+                </div>
               </div>
-              <div className={styles.loginGrid}>
+              <button className={styles.btnGhost} onClick={() => setIsAdminProfileOpen(false)}>
+                Close
+              </button>
+            </div>
+            <div className={styles.modalGrid}>
+              <label>
+                Admin name
                 <input
-                  className={styles.search}
-                  placeholder="Username"
-                  value={loginForm.username}
-                  onChange={(e) => setLoginForm((prev) => ({ ...prev, username: e.target.value }))}
+                  className={styles.input}
+                  placeholder="Admin name"
+                  value={adminProfileDraft.name}
+                  onChange={(e) => setAdminProfileDraft((prev) => ({ ...prev, name: e.target.value }))}
                 />
+              </label>
+              <label>
+                Username
                 <input
-                  className={styles.search}
+                  className={styles.input}
+                  placeholder="Username"
+                  value={adminProfileDraft.username}
+                  onChange={(e) =>
+                    setAdminProfileDraft((prev) => ({ ...prev, username: e.target.value }))
+                  }
+                />
+              </label>
+              <label>
+                Email
+                <input
+                  className={styles.input}
+                  placeholder="admin@nexora.com"
+                  value={adminProfileDraft.email || ''}
+                  onChange={(e) =>
+                    setAdminProfileDraft((prev) => ({ ...prev, email: e.target.value }))
+                  }
+                />
+              </label>
+              <label>
+                Password
+                <input
+                  className={styles.input}
                   type="password"
                   placeholder="Password"
-                  value={loginForm.password}
-                  onChange={(e) => setLoginForm((prev) => ({ ...prev, password: e.target.value }))}
+                  value={adminProfileDraft.password}
+                  onChange={(e) =>
+                    setAdminProfileDraft((prev) => ({ ...prev, password: e.target.value }))
+                  }
                 />
-                <button className={styles.btnAccent} type="submit" disabled={loading}>
-                  {loading ? 'Signing in...' : 'Login'}
-                </button>
-              </div>
-              {loginError && <div className={styles.errorText}>{loginError}</div>}
-            </form>
-          </section>
-        ) : (
-          <section className={styles.content}>
-            {activeTab === 'users' && renderUsers()}
-            {activeTab === 'teams' && renderTeams()}
-            {activeTab === 'projects' && renderProjects()}
-            {statusMsg && <div className={styles.statusText}>{statusMsg}</div>}
-          </section>
-        )}
-      </main>
+              </label>
+              <label>
+                Avatar (Optional)
+                <div className={styles.uploadField}>
+                  <input
+                    ref={adminAvatarInputRef}
+                    className={styles.fileInput}
+                    type="file"
+                    accept="image/*"
+                    id="admin-profile-avatar-upload"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      if (!file) {
+                        setAdminProfileDraft((prev) => ({ ...prev, avatarURL: '' }));
+                        return;
+                      }
+                      const ok = handleAvatarFile({
+                        file,
+                        onSuccess: (dataUrl) =>
+                          setAdminProfileDraft((prev) => ({
+                            ...prev,
+                            avatarURL: dataUrl,
+                          })),
+                        setMessage: setAdminProfileMsg,
+                      });
+                      if (!ok && adminAvatarInputRef.current) {
+                        adminAvatarInputRef.current.value = '';
+                      }
+                    }}
+                  />
+                  <label htmlFor="admin-profile-avatar-upload" className={styles.uploadButton}>
+                    Upload avatar
+                  </label>
+                  {adminProfileDraft.avatarURL ? (
+                    <div className={styles.uploadPreviewWrap}>
+                      <img
+                        className={styles.uploadPreview}
+                        src={adminProfileDraft.avatarURL}
+                        alt="Admin avatar preview"
+                      />
+                      <button
+                        type="button"
+                        className={styles.uploadRemove}
+                        onClick={() => {
+                          setAdminProfileDraft((prev) => ({ ...prev, avatarURL: '' }));
+                          if (adminAvatarInputRef.current) {
+                            adminAvatarInputRef.current.value = '';
+                          }
+                        }}
+                        aria-label="Remove avatar"
+                      >
+                        ×
+                      </button>
+                    </div>
+                  ) : (
+                    <span className={styles.uploadHint}>No file chosen</span>
+                  )}
+                </div>
+              </label>
+            </div>
+            {adminProfileMsg && <div className={styles.modalMessage}>{adminProfileMsg}</div>}
+            <div className={styles.actionsEnd}>
+              <button className={styles.btnPrimary} onClick={saveAdminProfile}>
+                Save Changes
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

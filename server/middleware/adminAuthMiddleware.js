@@ -10,7 +10,7 @@ const adminAuthMiddleware = (req, res, next) => {
     }
 
     if (!process.env.JWT_SECRET) {
-      return res.status(500).json({ message: 'JWT_SECRET tanımlı değil' });
+      return res.status(500).json({ message: 'JWT_SECRET is missing.' });
     }
 
     const decoded = jwt.verify(token, process.env.JWT_SECRET);

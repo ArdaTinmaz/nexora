@@ -48,12 +48,13 @@ const mapUserDoc = (doc) => {
 
 const isValidObjectId = (id) => mongoose.Types.ObjectId.isValid(id);
 
-const createUser = async ({ name, email, password }) => {
+const createUser = async ({ name, email, password, avatarURL = '' }) => {
   const hashedPassword = await bcrypt.hash(password, 10);
   const user = await User.create({
     name,
     email,
     password: hashedPassword,
+    avatarURL: avatarURL || '',
     createdAt: Date.now(),
     updatedAt: Date.now(),
   });

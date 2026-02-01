@@ -8,20 +8,71 @@ const { createProject } = require('../services/projectService');
 
 const toObjectId = (id) => new mongoose.Types.ObjectId(id);
 const isValidObjectId = (id) => mongoose.Types.ObjectId.isValid(id);
+const normalizeStatus = (status) =>
+  String(status || '').toLowerCase() === 'passive' ? 'Passive' : 'Active';
 
-const mapUser = (user, meta) => ({
-  id: user._id.toString(),
-  name: user.name,
-  email: user.email,
-  avatarURL: user.avatarURL || '',
-  theme: user.theme,
-  meta: meta || {
-    role: 'developer',
-    languages: [],
-    experienceYears: 0,
-    skills: [],
-  },
-});
+const mapMembers = (members = []) =>
+  members
+    .filter((m) => m?.userId)
+    .map((m) => ({
+      userId: m.userId.toString ? m.userId.toString() : String(m.userId),
+      role: m.role || 'developer',
+    }));
+
+const ensureLeaderMember = (team) => {
+  const leaderId = team?.leaderId?.toString ? team.leaderId.toString() : team?.leaderId;
+  let members = mapMembers(team?.members || []);
+  const seen = new Set();
+  members = members.filter((m) => {
+    if (!m.userId || seen.has(m.userId)) return false;
+    seen.add(m.userId);
+    return true;
+  });
+
+  if (!leaderId) return members;
+
+  const leaderIndex = members.findIndex((m) => m.userId === leaderId);
+  if (leaderIndex === -1) {
+    members = [{ userId: leaderId, role: 'team_leader' }, ...members];
+  } else if (members[leaderIndex].role !== 'team_leader') {
+    members = members.map((m, idx) => (idx === leaderIndex ? { ...m, role: 'team_leader' } : m));
+  }
+
+  return members;
+};
+
+const membersEqual = (a = [], b = []) =>
+  a.length === b.length && a.every((m, idx) => m.userId === b[idx].userId && m.role === b[idx].role);
+
+const applyNormalizedMembers = async (team) => {
+  const normalizedMembers = ensureLeaderMember(team);
+  const currentMembers = mapMembers(team?.members || []);
+  if (team?._id && !membersEqual(currentMembers, normalizedMembers)) {
+    await Team.updateOne(
+      { _id: team._id },
+      { $set: { members: normalizedMembers.map((m) => ({ userId: toObjectId(m.userId), role: m.role })) } }
+    );
+  }
+  return normalizedMembers;
+};
+
+const mapUser = (user, meta) => {
+  const safeMeta = meta || {};
+  return {
+    id: user._id.toString(),
+    name: user.name,
+    email: user.email,
+    avatarURL: user.avatarURL || '',
+    theme: user.theme,
+    meta: {
+      role: safeMeta.role || 'developer',
+      languages: safeMeta.languages || [],
+      experienceYears: safeMeta.experienceYears || 0,
+      skills: safeMeta.skills || [],
+      status: safeMeta.status || 'Active',
+    },
+  };
+};
 
 exports.listUsers = async (_req, res, next) => {
   try {
@@ -40,16 +91,34 @@ exports.listUsers = async (_req, res, next) => {
 exports.updateUserMeta = async (req, res, next) => {
   try {
     const { userId } = req.params;
-    const { role, languages = [], experienceYears = 0, skills = [] } = req.body || {};
+    const payload = req.body || {};
+    const hasField = (field) => Object.prototype.hasOwnProperty.call(payload, field);
+    const existing = await AdminUserProfile.findOne({ userId: toObjectId(userId) }).lean();
+
+    const nextMeta = {
+      role: hasField('role') ? payload.role || 'developer' : existing?.role || 'developer',
+      languages: hasField('languages')
+        ? Array.isArray(payload.languages)
+          ? payload.languages
+          : []
+        : existing?.languages || [],
+      experienceYears: hasField('experienceYears')
+        ? Number(payload.experienceYears) || 0
+        : existing?.experienceYears || 0,
+      skills: hasField('skills')
+        ? Array.isArray(payload.skills)
+          ? payload.skills
+          : []
+        : existing?.skills || [],
+      status: hasField('status') ? normalizeStatus(payload.status) : existing?.status || 'Active',
+      updatedAt: Date.now(),
+    };
 
     const updated = await AdminUserProfile.findOneAndUpdate(
       { userId: toObjectId(userId) },
       {
-        role: role || 'developer',
-        languages,
-        experienceYears,
-        skills,
-        updatedAt: Date.now(),
+        $set: nextMeta,
+        $setOnInsert: { userId: toObjectId(userId), createdAt: Date.now() },
       },
       { upsert: true, new: true }
     ).lean();
@@ -60,6 +129,7 @@ exports.updateUserMeta = async (req, res, next) => {
       languages: updated.languages,
       experienceYears: updated.experienceYears,
       skills: updated.skills,
+      status: updated.status || 'Active',
     });
   } catch (error) {
     next(error);
@@ -69,17 +139,21 @@ exports.updateUserMeta = async (req, res, next) => {
 exports.listTeams = async (_req, res, next) => {
   try {
     const teams = await Team.find().lean();
+    const normalized = await Promise.all(
+      teams.map(async (team) => ({
+        team,
+        members: await applyNormalizedMembers(team),
+      }))
+    );
+
     res.json(
-      teams.map((team) => ({
+      normalized.map(({ team, members }) => ({
         id: team._id.toString(),
         name: team.name,
         projectId: team.projectId?.toString(),
         projectHistory: team.projectHistory?.map((p) => p.toString()) || [],
         leaderId: team.leaderId?.toString(),
-        members: (team.members || []).map((m) => ({
-          userId: m.userId.toString(),
-          role: m.role,
-        })),
+        members,
         createdAt: team.createdAt,
       }))
     );
@@ -126,12 +200,14 @@ exports.createTeam = async (req, res, next) => {
       createdAt: Date.now(),
     });
 
+    const normalizedMembers = await applyNormalizedMembers(team);
+
     res.status(201).json({
       id: team._id.toString(),
       name: team.name,
       projectId: team.projectId ? team.projectId.toString() : null,
       leaderId: team.leaderId.toString(),
-      members: mergedMembers.map((m) => ({ userId: m.userId.toString(), role: m.role })),
+      members: normalizedMembers,
       createdAt: team.createdAt,
       projectHistory: team.projectHistory?.map((p) => p.toString()) || [],
     });
@@ -164,9 +240,11 @@ exports.addMemberToTeam = async (req, res, next) => {
       return res.status(400).json({ message: 'Takım bulunamadı veya üye zaten ekli' });
     }
 
+    const normalizedMembers = await applyNormalizedMembers(team);
+
     res.json({
       id: team._id.toString(),
-      members: team.members.map((m) => ({ userId: m.userId.toString(), role: m.role })),
+      members: normalizedMembers,
     });
   } catch (error) {
     next(error);
@@ -179,6 +257,15 @@ exports.removeMemberFromTeam = async (req, res, next) => {
     if (!isValidObjectId(teamId) || !isValidObjectId(userId)) {
       return res.status(400).json({ message: 'teamId veya userId geçersiz' });
     }
+
+    const existingTeam = await Team.findById(teamId).lean();
+    if (!existingTeam) {
+      return res.status(404).json({ message: 'Takım bulunamadı' });
+    }
+    if (existingTeam.leaderId?.toString() === userId) {
+      return res.status(400).json({ message: 'Team leader cannot be removed.' });
+    }
+
     const team = await Team.findOneAndUpdate(
       { _id: teamId },
       { $pull: { members: { userId: toObjectId(userId) } } },
@@ -189,9 +276,11 @@ exports.removeMemberFromTeam = async (req, res, next) => {
       return res.status(404).json({ message: 'Takım bulunamadı' });
     }
 
+    const normalizedMembers = await applyNormalizedMembers(team);
+
     res.json({
       id: team._id.toString(),
-      members: team.members.map((m) => ({ userId: m.userId.toString(), role: m.role })),
+      members: normalizedMembers,
     });
   } catch (error) {
     next(error);
@@ -339,13 +428,15 @@ exports.updateTeam = async (req, res, next) => {
       return res.status(404).json({ message: 'Team bulunamadı' });
     }
 
+    const normalizedMembers = await applyNormalizedMembers(team);
+
     res.json({
       id: team._id.toString(),
       name: team.name,
       leaderId: team.leaderId?.toString(),
       projectId: team.projectId ? team.projectId.toString() : null,
       projectHistory: team.projectHistory?.map((p) => p.toString()) || [],
-      members: (team.members || []).map((m) => ({ userId: m.userId.toString(), role: m.role })),
+      members: normalizedMembers,
     });
   } catch (error) {
     next(error);

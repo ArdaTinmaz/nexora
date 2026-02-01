@@ -1,6 +1,12 @@
 const express = require('express');
 const adminAuthMiddleware = require('../middleware/adminAuthMiddleware');
-const { login } = require('../controllers/adminAuthController');
+const {
+  login,
+  requestPasswordReset,
+  verifyPasswordReset,
+  resetPassword,
+} = require('../controllers/adminAuthController');
+const { getAdminProfile, updateAdminProfile } = require('../controllers/adminProfileController');
 const {
   listUsers,
   updateUserMeta,
@@ -21,8 +27,14 @@ const {
 const router = express.Router();
 
 router.post('/login', login);
+router.post('/forgot-password/request', requestPasswordReset);
+router.post('/forgot-password/verify', verifyPasswordReset);
+router.post('/forgot-password/reset', resetPassword);
 
 router.use(adminAuthMiddleware);
+
+router.get('/profile', getAdminProfile);
+router.patch('/profile', updateAdminProfile);
 
 router.get('/users', listUsers);
 router.post('/users/:userId/meta', updateUserMeta);

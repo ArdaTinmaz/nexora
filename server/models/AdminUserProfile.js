@@ -8,6 +8,7 @@ const adminUserProfileSchema = new Schema({
   languages: { type: [String], default: [] },
   experienceYears: { type: Number, default: 0 },
   skills: { type: [String], default: [] },
+  status: { type: String, enum: ['Active', 'Passive'], default: 'Active' },
   createdAt: { type: Number, default: Date.now },
   updatedAt: { type: Number, default: Date.now },
 });
