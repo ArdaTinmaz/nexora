@@ -63,6 +63,19 @@ function NeedHelpModal({ isOpen, onClose, onSubmit }) {
           </button>
         </div>
 
+        <div className={styles.hero}>
+          <div className={styles.heroImage}>
+            <img
+              src={`${process.env.PUBLIC_URL}/images/TaskProDesktop/Flower.png`}
+              alt="Help"
+            />
+          </div>
+          <p className={styles.heroText}>
+            If you need help with <span className={styles.heroAccent}>Nexora</span>, check out our
+            support resources or reach out to our customer support team.
+          </p>
+        </div>
+
         <form onSubmit={handleSubmit} className={styles.form}>
           <div className={styles.inputGroup}>
             <input
@@ -99,4 +112,3 @@ function NeedHelpModal({ isOpen, onClose, onSubmit }) {
 }
 
 export default NeedHelpModal;
-

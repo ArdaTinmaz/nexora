@@ -10,6 +10,7 @@ const buildUserResponse = (userDoc) => ({
   id: userDoc.id,
   name: userDoc.name,
   email: userDoc.email,
+  role: userDoc.role || 'developer',
   avatarURL: userDoc.avatarURL,
   theme: userDoc.theme,
 });

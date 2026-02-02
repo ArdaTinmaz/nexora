@@ -33,7 +33,10 @@ const authorizeAdminRoom = async ({ roomId, userId }) => {
     return { authorized: false };
   }
 
-  const teams = await Team.find({ projectId: toObjectId(projectId) }).lean();
+  const projectObjectId = toObjectId(projectId);
+  const teams = await Team.find({
+    $or: [{ projectId: projectObjectId }, { projectHistory: projectObjectId }],
+  }).lean();
   if (!teams.length) {
     return { authorized: false };
   }

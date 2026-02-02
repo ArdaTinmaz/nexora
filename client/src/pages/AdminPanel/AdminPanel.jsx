@@ -177,7 +177,12 @@ const AdminPanel = () => {
       setStatusMessage('Üye seçin');
       return;
     }
-    const teamId = teams.find((t) => t.projectId === selectedProjectId)?.id || teams[0]?.id;
+    const teamId =
+      teams.find(
+        (t) =>
+          t.projectId === selectedProjectId ||
+          (t.projectHistory || []).some((entry) => entry === selectedProjectId)
+      )?.id || teams[0]?.id;
     if (!teamId) {
       setStatusMessage('No team selected/available');
       return;

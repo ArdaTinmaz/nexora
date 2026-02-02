@@ -189,36 +189,28 @@ function Sidebar({ boards, currentBoardId, onBoardsChange }) {
           )}
         </div>
 
-        {/* Help section */}
-        <div className={styles.helpSection}>
-          <div className={styles.helpImage}>
-            <img 
-              src={`${process.env.PUBLIC_URL}/images/TaskProDesktop/Flower.png`}
-              alt="Help" 
-            />
-          </div>
-          <p className={styles.helpText}>
-            If you need help with <span className={styles.helpTextAccent}>Nexora</span>, check out our support resources or reach out to our customer support team.
-          </p>
-          <button className={styles.helpLink} type="button" onClick={handleNeedHelp}>
-            <svg className={styles.helpIcon} width="20" height="20" viewBox="0 0 32 32">
+        <div className={styles.footerActions}>
+          <button 
+            className={styles.logoutBtn}
+            onClick={handleLogout}
+            type="button"
+          >
+            <svg className={styles.logoutIcon} width="32" height="32" viewBox="0 0 32 32">
+              <use href="/sprites.svg#icon-login"></use>
+            </svg>
+            <span className={styles.logoutText}>Log out</span>
+          </button>
+          <button
+            className={styles.helpIconBtn}
+            type="button"
+            onClick={handleNeedHelp}
+            aria-label="Need help"
+          >
+            <svg className={styles.helpIconLarge} width="28" height="28" viewBox="0 0 32 32">
               <use href="/sprites.svg#icon-help-circle"></use>
             </svg>
-            <span>Need help?</span>
           </button>
         </div>
-
-        {/* Logout button */}
-        <button 
-          className={styles.logoutBtn}
-          onClick={handleLogout}
-          type="button"
-        >
-          <svg className={styles.logoutIcon} width="32" height="32" viewBox="0 0 32 32">
-            <use href="/sprites.svg#icon-login"></use>
-          </svg>
-          <span className={styles.logoutText}>Log out</span>
-        </button>
       </aside>
 
       {/* Modals */}

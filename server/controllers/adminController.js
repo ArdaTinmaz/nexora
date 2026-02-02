@@ -44,6 +44,34 @@ const ensureLeaderMember = (team) => {
 const membersEqual = (a = [], b = []) =>
   a.length === b.length && a.every((m, idx) => m.userId === b[idx].userId && m.role === b[idx].role);
 
+const collectAssignedUserIds = async (userIds = [], excludeTeamId = null) => {
+  const uniqueIds = [...new Set((userIds || []).filter(Boolean).map((id) => String(id)))];
+  const validIds = uniqueIds.filter((id) => isValidObjectId(id));
+  if (!validIds.length) return new Set();
+  const objectIds = validIds.map((id) => toObjectId(id));
+  const query = {
+    $or: [{ leaderId: { $in: objectIds } }, { 'members.userId': { $in: objectIds } }],
+  };
+  if (excludeTeamId && isValidObjectId(excludeTeamId)) {
+    query._id = { $ne: toObjectId(excludeTeamId) };
+  }
+  const teams = await Team.find(query).lean();
+  const assigned = new Set();
+  teams.forEach((team) => {
+    const leaderId = team.leaderId?.toString ? team.leaderId.toString() : String(team.leaderId || '');
+    if (validIds.includes(leaderId)) {
+      assigned.add(leaderId);
+    }
+    (team.members || []).forEach((member) => {
+      const memberId = member.userId?.toString ? member.userId.toString() : String(member.userId || '');
+      if (validIds.includes(memberId)) {
+        assigned.add(memberId);
+      }
+    });
+  });
+  return assigned;
+};
+
 const applyNormalizedMembers = async (team) => {
   const normalizedMembers = ensureLeaderMember(team);
   const currentMembers = mapMembers(team?.members || []);
@@ -123,6 +151,8 @@ exports.updateUserMeta = async (req, res, next) => {
       { upsert: true, new: true }
     ).lean();
 
+    await UserModel.updateUserFields(userId, { role: updated.role || 'developer' });
+
     res.json({
       userId,
       role: updated.role,
@@ -185,6 +215,15 @@ exports.createTeam = async (req, res, next) => {
           })
       : [];
 
+    const requestedUserIds = [
+      leaderId,
+      ...sanitizedMembers.map((m) => (m.userId?.toString ? m.userId.toString() : String(m.userId))),
+    ];
+    const assigned = await collectAssignedUserIds(requestedUserIds);
+    if (assigned.size) {
+      return res.status(400).json({ message: 'User already assigned to another team.' });
+    }
+
     const leaderObject = { userId: toObjectId(leaderId), role: 'team_leader' };
     const mergedMembers = [leaderObject, ...sanitizedMembers].filter(
       (member, index, self) =>
@@ -228,6 +267,11 @@ exports.addMemberToTeam = async (req, res, next) => {
     }
     if (!isValidObjectId(userId)) {
       return res.status(400).json({ message: 'userId geçersiz' });
+    }
+
+    const assigned = await collectAssignedUserIds([userId], teamId);
+    if (assigned.size) {
+      return res.status(400).json({ message: 'User already assigned to another team.' });
     }
 
     const team = await Team.findOneAndUpdate(
@@ -380,7 +424,11 @@ exports.deleteProject = async (req, res, next) => {
       return res.status(400).json({ message: 'projectId geçersiz' });
     }
     await Project.deleteOne({ _id: projectId });
-    await Team.updateMany({ projectId }, { projectId: null });
+    await Team.updateMany(
+      { projectHistory: toObjectId(projectId) },
+      { $pull: { projectHistory: toObjectId(projectId) } }
+    );
+    await Team.updateMany({ projectId: toObjectId(projectId) }, { projectId: null });
     res.status(204).end();
   } catch (error) {
     next(error);
@@ -393,18 +441,22 @@ exports.updateTeamProject = async (req, res, next) => {
     if (!mongoose.Types.ObjectId.isValid(projectId) || !mongoose.Types.ObjectId.isValid(teamId)) {
       return res.status(400).json({ message: 'projectId veya teamId geçersiz' });
     }
-    const team = await Team.findByIdAndUpdate(
-      teamId,
-      { projectId, $addToSet: { projectHistory: projectId } },
-      { new: true }
-    ).lean();
+    const existing = await Team.findById(teamId).lean();
+    if (!existing) {
+      return res.status(404).json({ message: 'Team bulunamadı' });
+    }
+    const updates = { $addToSet: { projectHistory: toObjectId(projectId) } };
+    if (!existing.projectId) {
+      updates.$set = { projectId: toObjectId(projectId) };
+    }
+    const team = await Team.findByIdAndUpdate(teamId, updates, { new: true }).lean();
     if (!team) {
       return res.status(404).json({ message: 'Team bulunamadı' });
     }
     res.json({
       id: team._id.toString(),
       name: team.name,
-      projectId: team.projectId.toString(),
+      projectId: team.projectId ? team.projectId.toString() : null,
       projectHistory: team.projectHistory?.map((p) => p.toString()) || [],
     });
   } catch (error) {
@@ -422,6 +474,13 @@ exports.updateTeam = async (req, res, next) => {
     const updates = {};
     if (name) updates.name = name.trim();
     if (leaderId) updates.leaderId = toObjectId(leaderId);
+
+    if (leaderId) {
+      const assigned = await collectAssignedUserIds([leaderId], teamId);
+      if (assigned.size) {
+        return res.status(400).json({ message: 'User already assigned to another team.' });
+      }
+    }
 
     const team = await Team.findByIdAndUpdate(teamId, updates, { new: true }).lean();
     if (!team) {
@@ -449,20 +508,30 @@ exports.removeTeamFromProject = async (req, res, next) => {
     if (!mongoose.Types.ObjectId.isValid(projectId) || !mongoose.Types.ObjectId.isValid(teamId)) {
       return res.status(400).json({ message: 'projectId veya teamId geçersiz' });
     }
-
-    const team = await Team.findOneAndUpdate(
-      { _id: teamId, projectId },
-      { projectId: null },
-      { new: true }
-    ).lean();
-
+    const team = await Team.findById(teamId).lean();
     if (!team) {
+      return res.status(404).json({ message: 'Team bulunamadı' });
+    }
+    const projectKey = String(projectId);
+    const historyIds = (team.projectHistory || []).map((p) => p.toString());
+    const inHistory = historyIds.includes(projectKey);
+    const isPrimary = team.projectId?.toString() === projectKey;
+    if (!inHistory && !isPrimary) {
       return res.status(404).json({ message: 'Team bulunamadı veya bu projede değil' });
     }
+    const nextHistory = historyIds.filter((id) => id !== projectKey);
+    const updates = {
+      projectHistory: nextHistory.map((id) => toObjectId(id)),
+    };
+    if (isPrimary) {
+      updates.projectId = nextHistory.length ? toObjectId(nextHistory[0]) : null;
+    }
+    const updated = await Team.findByIdAndUpdate(teamId, { $set: updates }, { new: true }).lean();
 
     res.json({
-      id: team._id.toString(),
-      projectId: team.projectId,
+      id: updated._id.toString(),
+      projectId: updated.projectId ? updated.projectId.toString() : null,
+      projectHistory: updated.projectHistory?.map((p) => p.toString()) || [],
     });
   } catch (error) {
     next(error);

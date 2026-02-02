@@ -44,6 +44,7 @@ const AdminConsole = () => {
   const [teamSearch, setTeamSearch] = useState('');
   const [teamToDelete, setTeamToDelete] = useState(null);
   const [userSearch, setUserSearch] = useState('');
+  const [roleChangeWarning, setRoleChangeWarning] = useState(null);
   const [teamModal, setTeamModal] = useState(null);
   const [teamDraft, setTeamDraft] = useState({ name: '', leaderId: '' });
   const [memberDraft, setMemberDraft] = useState({ userId: '', role: 'developer' });
@@ -66,6 +67,30 @@ const AdminConsole = () => {
     [users]
   );
 
+  const assignedTeamByUserId = useMemo(() => {
+    const map = new Map();
+    (teams || []).forEach((team) => {
+      if (team?.leaderId) {
+        map.set(String(team.leaderId), team);
+      }
+      (team.members || []).forEach((member) => {
+        if (member?.userId) {
+          map.set(String(member.userId), team);
+        }
+      });
+    });
+    return map;
+  }, [teams]);
+
+  const availableTeamLeadOptions = useMemo(() => {
+    const activeTeamId = teamModal?.team?.id || null;
+    return teamLeadOptions.filter((user) => {
+      const assignedTeam = assignedTeamByUserId.get(String(user.id));
+      if (!assignedTeam) return true;
+      return activeTeamId && assignedTeam.id === activeTeamId;
+    });
+  }, [teamLeadOptions, assignedTeamByUserId, teamModal?.team?.id]);
+
   const projectOwnerOptions = useMemo(
     () =>
       users.filter((u) => String(u?.meta?.role || '').toLowerCase() === 'product_manager'),
@@ -79,6 +104,11 @@ const AdminConsole = () => {
     });
     return map;
   }, [projects]);
+
+  const assignedTeamForUser = useMemo(() => {
+    if (!editingUserId || editingUserId === 'create') return null;
+    return assignedTeamByUserId.get(String(editingUserId)) || null;
+  }, [assignedTeamByUserId, editingUserId]);
 
   const getBackendOrigin = () => {
     const apiBase = process.env.REACT_APP_API_URL || 'http://localhost:5001/api';
@@ -102,6 +132,13 @@ const AdminConsole = () => {
       .trim();
     if (!text) return '—';
     return text.replace(/\b\w/g, (char) => char.toUpperCase());
+  };
+
+  const teamHasProject = (team, projectId) => {
+    if (!team || !projectId) return false;
+    const key = String(projectId);
+    if (team.projectId && String(team.projectId) === key) return true;
+    return (team.projectHistory || []).some((entry) => String(entry) === key);
   };
 
   const openAdminProfileModal = async () => {
@@ -333,6 +370,26 @@ const AdminConsole = () => {
 
   const handleSaveUser = async () => {
     if (!editingUserId || editingUserId === 'create') return;
+    const editingUser = users.find((u) => u.id === editingUserId);
+    const currentRole = String(editingUser?.meta?.role || editingUser?.role || '').toLowerCase();
+    const nextRole = String(userDraft.role || '').toLowerCase();
+    const isRoleChanged = currentRole !== nextRole;
+    const isTeamLead = teams.some((team) => {
+      const leaderId = team?.leaderId ? String(team.leaderId) : '';
+      if (leaderId === editingUserId) return true;
+      return (team?.members || []).some(
+        (member) =>
+          String(member?.userId) === editingUserId &&
+          String(member?.role || '').toLowerCase() === 'team_leader'
+      );
+    });
+    if (isRoleChanged && isTeamLead) {
+      setEditingUserId(null);
+      setRoleChangeWarning({
+        name: editingUser?.name || 'This user',
+      });
+      return;
+    }
     try {
       setLoading(true);
       await adminApi.updateUserMeta(editingUserId, {
@@ -357,6 +414,12 @@ const AdminConsole = () => {
     const draft = userAssignDraft || {};
     if (!draft.teamId || !draft.role) {
       setStatusMsg('Team ve role seçin');
+      return;
+    }
+    if (assignedTeamForUser) {
+      setStatusMsg(
+        `User already assigned to "${assignedTeamForUser.name || assignedTeamForUser.id}".`
+      );
       return;
     }
     try {
@@ -385,10 +448,15 @@ const AdminConsole = () => {
     if (!teamModal?.team || teamModal.mode !== 'members') return [];
     const memberIds = (teamModal.team.members || []).map((m) => m.userId);
     const leaderId = teamModal.team.leaderId;
+    const teamId = teamModal.team.id;
     const memberRoleMap = (teamModal.team.members || []).reduce((acc, m) => {
       acc[m.userId] = m.role;
       return acc;
     }, {});
+    const isAssignedElsewhere = (userId) => {
+      const assignedTeam = assignedTeamByUserId.get(String(userId));
+      return assignedTeam && assignedTeam.id !== teamId;
+    };
     if (memberMode === 'delete') {
       return users
         .filter(
@@ -405,12 +473,13 @@ const AdminConsole = () => {
     const hasLead = (teamModal.team.members || []).some((m) => m.role === 'team_leader');
     return users
       .filter((u) => !memberIds.includes(u.id))
+      .filter((u) => !isAssignedElsewhere(u.id))
       .map((u) => ({
         ...u,
         role: u.meta?.role || 'developer',
       }))
       .filter((u) => !(hasLead && u.role === 'team_leader'));
-  }, [teamModal, memberMode, users]);
+  }, [teamModal, memberMode, users, assignedTeamByUserId]);
 
   useEffect(() => {
     if (!teamModal?.team || teamModal.mode !== 'members') return;
@@ -764,44 +833,52 @@ const AdminConsole = () => {
               </div>
             </div>
             <div className={styles.inlinePanel}>
-              <div className={styles.assignRow}>
-                <label>
-                  Assign to team
-                  <select
-                    className={styles.select}
-                    value={userAssignDraft.teamId}
-                    onChange={(e) =>
-                      setUserAssignDraft((prev) => ({ ...prev, teamId: e.target.value }))
-                    }
-                  >
-                    <option value="">Select Team</option>
-                    {teams.map((team) => (
-                      <option key={team.id} value={team.id}>
-                        {team.name}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <label>
-                  Team role
-                  <select
-                    className={styles.select}
-                    value={userAssignDraft.role}
-                    onChange={(e) =>
-                      setUserAssignDraft((prev) => ({ ...prev, role: e.target.value }))
-                    }
-                  >
-                    {roleOptions.map((r) => (
-                      <option key={r} value={r}>
-                        {formatRoleLabel(r)}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <button type="button" className={styles.btnGhost} onClick={handleAssignTeam}>
-                  Add to team
-                </button>
-              </div>
+              {assignedTeamForUser ? (
+                <div className={styles.assignNotice}>
+                  {`User is already assigned to "${
+                    assignedTeamForUser.name || assignedTeamForUser.id
+                  }". Remove them from that team to assign a new one.`}
+                </div>
+              ) : (
+                <div className={styles.assignRow}>
+                  <label>
+                    Assign to team
+                    <select
+                      className={styles.select}
+                      value={userAssignDraft.teamId}
+                      onChange={(e) =>
+                        setUserAssignDraft((prev) => ({ ...prev, teamId: e.target.value }))
+                      }
+                    >
+                      <option value="">Select Team</option>
+                      {teams.map((team) => (
+                        <option key={team.id} value={team.id}>
+                          {team.name}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label>
+                    Team role
+                    <select
+                      className={styles.select}
+                      value={userAssignDraft.role}
+                      onChange={(e) =>
+                        setUserAssignDraft((prev) => ({ ...prev, role: e.target.value }))
+                      }
+                    >
+                      {roleOptions.map((r) => (
+                        <option key={r} value={r}>
+                          {formatRoleLabel(r)}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <button type="button" className={styles.btnGhost} onClick={handleAssignTeam}>
+                    Add to team
+                  </button>
+                </div>
+              )}
             </div>
             <div className={styles.actionsEnd}>
               <button className={styles.btnPrimary} onClick={handleSaveUser} disabled={loading}>
@@ -922,6 +999,17 @@ const AdminConsole = () => {
           </div>
         </div>
       )}
+      <ConfirmModal
+        isOpen={Boolean(roleChangeWarning)}
+        title="Role change blocked"
+        message={`${
+          roleChangeWarning?.name || 'This user'
+        } is a team lead in one or more teams, so their role cannot be changed.`}
+        confirmLabel="OK"
+        cancelLabel="Close"
+        onCancel={() => setRoleChangeWarning(null)}
+        onConfirm={() => setRoleChangeWarning(null)}
+      />
     </>
   );
 
@@ -945,7 +1033,7 @@ const AdminConsole = () => {
               setTeamModal({ mode: 'create' });
               setTeamDraft({
                 name: '',
-                leaderId: teamLeadOptions[0]?.id || '',
+                leaderId: availableTeamLeadOptions[0]?.id || '',
               });
             }}
           >
@@ -1059,8 +1147,8 @@ const AdminConsole = () => {
                     onChange={(e) => setTeamDraft((p) => ({ ...p, leaderId: e.target.value }))}
                   >
                     <option value="">Select team lead</option>
-                    {teamLeadOptions.length ? (
-                      teamLeadOptions.map((u) => (
+                    {availableTeamLeadOptions.length ? (
+                      availableTeamLeadOptions.map((u) => (
                         <option key={u.id} value={u.id}>
                           {u.name || u.email}
                         </option>
@@ -1091,6 +1179,10 @@ const AdminConsole = () => {
                         acc[m.userId] = m.role;
                         return acc;
                       }, {});
+                      const isAssignedElsewhere = (userId) => {
+                        const assignedTeam = assignedTeamByUserId.get(String(userId));
+                        return assignedTeam && assignedTeam.id !== teamModal.team.id;
+                      };
                       const hasLead = (teamModal.team.members || []).some((m) => m.role === 'team_leader');
                       const nextOptions =
                         next === 'delete'
@@ -1107,6 +1199,7 @@ const AdminConsole = () => {
                               }))
                           : users
                               .filter((u) => !memberIds.includes(u.id))
+                              .filter((u) => !isAssignedElsewhere(u.id))
                               .map((u) => ({
                                 ...u,
                                 role: u.meta?.role || 'developer',
@@ -1323,14 +1416,14 @@ const AdminConsole = () => {
               <div className={styles.metaRow}>
                 <span>
                   Teams:{' '}
-                  {teams.filter((t) => t.projectId === project.id).length}
+                  {teams.filter((t) => teamHasProject(t, project.id)).length}
                 </span>
                 <span>
                   Members:{' '}
                   {Array.from(
                     new Set(
                       teams
-                        .filter((t) => t.projectId === project.id)
+                        .filter((t) => teamHasProject(t, project.id))
                         .flatMap((t) => t.members?.map((m) => m.userId) || [])
                     )
                   ).length}
@@ -1445,7 +1538,9 @@ const AdminConsole = () => {
                 <option value="">Select Team</option>
                 {teams
                   .filter((t) =>
-                    assignMode === 'add' ? t.projectId !== projectModal.id : t.projectId === projectModal.id
+                    assignMode === 'add'
+                      ? !teamHasProject(t, projectModal.id)
+                      : teamHasProject(t, projectModal.id)
                   )
                   .map((t) => (
                         <option key={t.id} value={t.id}>
@@ -1474,13 +1569,13 @@ const AdminConsole = () => {
                 <label>Teams in this project</label>
                 <div className={styles.chipRow}>
                   {teams
-                    .filter((t) => t.projectId === projectModal.id)
+                    .filter((t) => teamHasProject(t, projectModal.id))
                     .map((t) => (
                       <button key={t.id} className={styles.chip}>
                         {t.name} ({t.members?.length || 0})
                       </button>
                     ))}
-                  {teams.filter((t) => t.projectId === projectModal.id).length === 0 && (
+                  {teams.filter((t) => teamHasProject(t, projectModal.id)).length === 0 && (
                     <span className={styles.muted}>No teams yet</span>
                   )}
                 </div>
@@ -1522,15 +1617,23 @@ const AdminConsole = () => {
                     }
                     try {
                       setLoading(true);
-                      await adminApi.createProject({
+                      const created = await adminApi.createProject({
                         name: projectDraft.name,
                         ownerId: projectDraft.ownerId,
                         ownerName: projectDraft.ownerName || userNameMap[projectDraft.ownerId] || projectDraft.ownerId,
                         status: projectDraft.status || 'Active',
                       });
+                      if (assignProjectDraft.teamId) {
+                        try {
+                          await adminApi.updateTeamProject(created.id, assignProjectDraft.teamId);
+                        } catch (assignErr) {
+                          setStatusMsg(`Project created, but team assignment failed: ${assignErr.message}`);
+                        }
+                      }
                       setStatusMsg('Project created');
                       await loadData();
                       setProjectModal(null);
+                      setAssignProjectDraft({ teamId: '' });
                     } catch (err) {
                       setStatusMsg(err.message);
                     } finally {

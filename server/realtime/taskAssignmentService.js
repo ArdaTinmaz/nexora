@@ -28,7 +28,11 @@ const ensureAssignmentPermissions = async ({ teamId, projectId, assignedBy, assi
 
   const { team, role } = teamData;
 
-  if (team.projectId.toString() !== projectId) {
+  const projectKey = String(projectId);
+  const projectMatch =
+    team.projectId?.toString() === projectKey ||
+    (team.projectHistory || []).some((entry) => entry?.toString() === projectKey);
+  if (!projectMatch) {
     const error = new Error('invalid project');
     error.statusCode = 403;
     throw error;

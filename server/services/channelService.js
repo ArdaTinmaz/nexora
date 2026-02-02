@@ -3,9 +3,16 @@ const Channel = require('../models/Channel');
 const ChannelMessage = require('../models/ChannelMessage');
 const ChannelInvite = require('../models/ChannelInvite');
 const Team = require('../models/Team');
+const AdminUserProfile = require('../models/AdminUserProfile');
 const { findUserRoleInTeam } = require('../realtime/roomAuth');
 
 const toObjectId = (id) => new mongoose.Types.ObjectId(id);
+
+const getAdminRole = async (userId) => {
+  if (!mongoose.Types.ObjectId.isValid(userId)) return '';
+  const profile = await AdminUserProfile.findOne({ userId: toObjectId(userId) }).lean();
+  return String(profile?.role || '').toLowerCase();
+};
 
 const ensureTeamAndRole = async (teamId, userId) => {
   if (!mongoose.Types.ObjectId.isValid(teamId)) {
@@ -25,15 +32,21 @@ const ensureTeamAndRole = async (teamId, userId) => {
 
 const ensureLeader = async (teamId, userId) => {
   const { team, role } = await ensureTeamAndRole(teamId, userId);
-  if (role !== 'team_leader') {
-    const error = new Error('Yetkisiz');
-    error.statusCode = 403;
-    throw error;
+  if (role === 'team_leader') {
+    return { team, role };
   }
-  return { team, role };
+  const adminRole = await getAdminRole(userId);
+  if (adminRole === 'team_leader') {
+    return { team, role: 'team_leader' };
+  }
+  const error = new Error('Yetkisiz');
+  error.statusCode = 403;
+  throw error;
 };
 
 const listTeamsForUser = async (userId) => {
+  const adminRole = await getAdminRole(userId);
+  const overrideRole = adminRole === 'team_leader' ? 'team_leader' : '';
   const teams = await Team.find({
     $or: [{ leaderId: toObjectId(userId) }, { 'members.userId': toObjectId(userId) }],
   }).lean();
@@ -42,7 +55,7 @@ const listTeamsForUser = async (userId) => {
     id: team._id.toString(),
     name: team.name,
     projectId: team.projectId?.toString(),
-    role: findUserRoleInTeam(team, userId),
+    role: overrideRole || findUserRoleInTeam(team, userId),
   }));
 };
 

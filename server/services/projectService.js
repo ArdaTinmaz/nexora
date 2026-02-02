@@ -35,6 +35,34 @@ const ensureProjectOwner = async (projectId, ownerId) => {
   return project;
 };
 
+const collectAssignedUserIds = async (userIds = [], excludeTeamId = null) => {
+  const uniqueIds = [...new Set((userIds || []).filter(Boolean).map((id) => String(id)))];
+  const validIds = uniqueIds.filter((id) => mongoose.Types.ObjectId.isValid(id));
+  if (!validIds.length) return new Set();
+  const objectIds = validIds.map((id) => toObjectId(id));
+  const query = {
+    $or: [{ leaderId: { $in: objectIds } }, { 'members.userId': { $in: objectIds } }],
+  };
+  if (excludeTeamId && mongoose.Types.ObjectId.isValid(excludeTeamId)) {
+    query._id = { $ne: toObjectId(excludeTeamId) };
+  }
+  const teams = await Team.find(query).lean();
+  const assigned = new Set();
+  teams.forEach((team) => {
+    const leaderId = team.leaderId?.toString ? team.leaderId.toString() : String(team.leaderId || '');
+    if (validIds.includes(leaderId)) {
+      assigned.add(leaderId);
+    }
+    (team.members || []).forEach((member) => {
+      const memberId = member.userId?.toString ? member.userId.toString() : String(member.userId || '');
+      if (validIds.includes(memberId)) {
+        assigned.add(memberId);
+      }
+    });
+  });
+  return assigned;
+};
+
 const createProject = async ({
   name,
   ownerId,
@@ -104,6 +132,17 @@ const createTeamForProject = async ({ projectId, name, leaderId, members = [], o
         }))
     : [];
 
+  const requestedUserIds = [
+    leaderId,
+    ...sanitizedMembers.map((m) => (m.userId?.toString ? m.userId.toString() : String(m.userId))),
+  ];
+  const assigned = await collectAssignedUserIds(requestedUserIds);
+  if (assigned.size) {
+    const error = new Error('User already assigned to another team.');
+    error.statusCode = 400;
+    throw error;
+  }
+
   // leader ekle
   const leaderObject = { userId: toObjectId(leaderId), role: 'team_leader' };
   const mergedMembers = [leaderObject, ...sanitizedMembers].filter(
@@ -114,6 +153,7 @@ const createTeamForProject = async ({ projectId, name, leaderId, members = [], o
   const team = await Team.create({
     name: name.trim(),
     projectId: toObjectId(projectId),
+    projectHistory: [toObjectId(projectId)],
     leaderId: toObjectId(leaderId),
     members: mergedMembers,
     createdAt: Date.now(),
@@ -134,11 +174,14 @@ const createTeamForProject = async ({ projectId, name, leaderId, members = [], o
 
 const listTeamsByProject = async ({ projectId, ownerId }) => {
   await ensureProjectOwner(projectId, ownerId);
-  const teams = await Team.find({ projectId: toObjectId(projectId) }).lean();
+  const projectObjectId = toObjectId(projectId);
+  const teams = await Team.find({
+    $or: [{ projectId: projectObjectId }, { projectHistory: projectObjectId }],
+  }).lean();
   return teams.map((team) => ({
     id: team._id.toString(),
     name: team.name,
-    projectId: team.projectId.toString(),
+    projectId: team.projectId ? team.projectId.toString() : null,
     leaderId: team.leaderId.toString(),
     members: (team.members || []).map((m) => ({
       userId: m.userId.toString(),
@@ -156,8 +199,20 @@ const addMemberToTeam = async ({ projectId, teamId, ownerId, userId, role = 'dev
     throw error;
   }
 
+  const assigned = await collectAssignedUserIds([userId], teamId);
+  if (assigned.size) {
+    const error = new Error('User already assigned to another team.');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const projectObjectId = toObjectId(projectId);
   const update = await Team.findOneAndUpdate(
-    { _id: teamId, projectId: toObjectId(projectId), 'members.userId': { $ne: toObjectId(userId) } },
+    {
+      _id: teamId,
+      $or: [{ projectId: projectObjectId }, { projectHistory: projectObjectId }],
+      'members.userId': { $ne: toObjectId(userId) },
+    },
     { $push: { members: { userId: toObjectId(userId), role } } },
     { new: true }
   ).lean();
@@ -171,7 +226,7 @@ const addMemberToTeam = async ({ projectId, teamId, ownerId, userId, role = 'dev
   return {
     id: update._id.toString(),
     name: update.name,
-    projectId: update.projectId.toString(),
+    projectId: update.projectId ? update.projectId.toString() : null,
     leaderId: update.leaderId.toString(),
     members: update.members.map((m) => ({
       userId: m.userId.toString(),

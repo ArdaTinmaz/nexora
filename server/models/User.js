@@ -7,6 +7,11 @@ const userSchema = new Schema({
   name: { type: String, required: true },
   email: { type: String, required: true, unique: true, index: true },
   password: { type: String, required: true },
+  role: {
+    type: String,
+    enum: ['admin', 'product_manager', 'scrum_master', 'team_leader', 'developer', 'designer'],
+    default: 'developer',
+  },
   avatarURL: { type: String, default: '' },
   theme: { type: String, enum: ['light', 'dark', 'violet'], default: 'light' },
   refreshTokenHash: { type: String, default: null },
@@ -33,6 +38,7 @@ const mapUserDoc = (doc) => {
     name: data.name,
     email: data.email,
     password: data.password,
+    role: data.role || 'developer',
     avatarURL: data.avatarURL || '',
     theme: data.theme || 'light',
     refreshTokenHash: data.refreshTokenHash,
@@ -48,12 +54,13 @@ const mapUserDoc = (doc) => {
 
 const isValidObjectId = (id) => mongoose.Types.ObjectId.isValid(id);
 
-const createUser = async ({ name, email, password, avatarURL = '' }) => {
+const createUser = async ({ name, email, password, avatarURL = '', role = 'developer' }) => {
   const hashedPassword = await bcrypt.hash(password, 10);
   const user = await User.create({
     name,
     email,
     password: hashedPassword,
+    role,
     avatarURL: avatarURL || '',
     createdAt: Date.now(),
     updatedAt: Date.now(),
@@ -92,6 +99,7 @@ const updateUser = async (id, updates) => {
     'name',
     'email',
     'password',
+    'role',
     'avatarURL',
     'theme',
     'refreshTokenHash',
