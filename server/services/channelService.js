@@ -55,6 +55,7 @@ const listTeamsForUser = async (userId) => {
     id: team._id.toString(),
     name: team.name,
     projectId: team.projectId?.toString(),
+    projectHistory: (team.projectHistory || []).map((entry) => entry.toString()),
     role: overrideRole || findUserRoleInTeam(team, userId),
   }));
 };

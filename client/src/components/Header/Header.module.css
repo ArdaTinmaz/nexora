@@ -82,6 +82,30 @@
   gap: 12px;
 }
 
+.tasksBtn {
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 999px;
+  padding: 6px 14px;
+  font-family: var(--font-family);
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.85);
+  cursor: pointer;
+  transition: background 0.2s ease, color 0.2s ease, border-color 0.2s ease;
+}
+
+.tasksBtn:hover {
+  background: rgba(190, 219, 176, 0.15);
+  border-color: rgba(190, 219, 176, 0.4);
+  color: var(--accent-green);
+}
+
+.tasksActive {
+  background: rgba(190, 219, 176, 0.2);
+  border-color: rgba(190, 219, 176, 0.6);
+  color: var(--accent-green);
+}
+
 .filtersBtn {
   display: flex;
   align-items: center;

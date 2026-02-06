@@ -35,7 +35,16 @@ exports.getTeamMembers = async (req, res, next) => {
       ...(team.members || []).map((m) => ({ userId: m.userId.toString(), role: m.role })),
     ].filter((m) => m.userId);
 
-    const uniqueIds = [...new Set(memberEntries.map((m) => m.userId))];
+    const uniqueMap = new Map();
+    memberEntries.forEach((entry) => {
+      const existing = uniqueMap.get(entry.userId);
+      if (!existing || entry.role === 'team_leader') {
+        uniqueMap.set(entry.userId, entry);
+      }
+    });
+
+    const uniqueEntries = Array.from(uniqueMap.values());
+    const uniqueIds = uniqueEntries.map((m) => m.userId);
     const users = await UserModel.model
       .find({ _id: { $in: uniqueIds.map((id) => new mongoose.Types.ObjectId(id)) } })
       .lean();
@@ -45,7 +54,7 @@ exports.getTeamMembers = async (req, res, next) => {
       return acc;
     }, {});
 
-    const response = memberEntries.map((entry) => {
+    const response = uniqueEntries.map((entry) => {
       const user = userMap[entry.userId] || {};
       return {
         id: entry.userId,

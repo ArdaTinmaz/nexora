@@ -14,7 +14,7 @@ const icons = [
 
 const backgrounds = Array.from({ length: 15 }, (_, i) => `Desktop${i + 1}.jpg`);
 
-function EditBoardModal({ isOpen, onClose, onEdit, board }) {
+function EditBoardModal({ isOpen, onClose, onEdit, board, disableTitle = false }) {
   const [title, setTitle] = useState('');
   const [selectedIcon, setSelectedIcon] = useState(null);
   const [selectedBackground, setSelectedBackground] = useState(null);
@@ -31,16 +31,16 @@ function EditBoardModal({ isOpen, onClose, onEdit, board }) {
 
   const handleSubmit = (e) => {
     e.preventDefault();
-    if (title.trim()) {
-      onEdit({
-        ...board,
-        name: title.trim(),
-        icon: selectedIcon,
-        iconName: icons.find(i => i.id === selectedIcon)?.name || 'icon-Project',
-        background: selectedBackground,
-      });
-      onClose();
-    }
+    const nextTitle = disableTitle ? board?.name || title : title.trim();
+    if (!nextTitle) return;
+    onEdit({
+      ...board,
+      name: nextTitle,
+      icon: selectedIcon,
+      iconName: icons.find(i => i.id === selectedIcon)?.name || 'icon-Project',
+      background: selectedBackground,
+    });
+    onClose();
   };
 
   const handleOverlayClick = (e) => {
@@ -75,6 +75,7 @@ function EditBoardModal({ isOpen, onClose, onEdit, board }) {
               placeholder="Title"
               value={title}
               onChange={(e) => setTitle(e.target.value)}
+              disabled={disableTitle}
               autoFocus
             />
           </div>

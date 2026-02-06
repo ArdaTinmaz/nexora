@@ -2,6 +2,9 @@ const mongoose = require('mongoose');
 const UserModel = require('../models/User');
 const Team = require('../models/Team');
 const Project = require('../models/Project');
+const Board = require('../models/Board');
+const BoardColumn = require('../models/BoardColumn');
+const Card = require('../models/Card');
 const AdminUserProfile = require('../models/AdminUserProfile');
 const Channel = require('../models/Channel');
 const { createProject } = require('../services/projectService');
@@ -379,6 +382,25 @@ exports.createProject = async (req, res, next) => {
       endDate,
       status,
     });
+
+    const existingBoard = await Board.findOne({
+      projectId: project.id,
+      type: 'company',
+    }).lean();
+
+    if (!existingBoard) {
+      await Board.create({
+        projectId: project.id,
+        type: 'company',
+        name: project.name,
+        icon: 'project',
+        iconName: 'icon-Project',
+        background: '',
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      });
+    }
+
     res.status(201).json(project);
   } catch (error) {
     next(error);
@@ -403,6 +425,14 @@ exports.updateProject = async (req, res, next) => {
     if (!updated) {
       return res.status(404).json({ message: 'Project bulunamadı' });
     }
+
+    if (updates.name) {
+      await Board.updateOne(
+        { projectId: updated._id, type: 'company' },
+        { name: updated.name, updatedAt: Date.now() }
+      );
+    }
+
     res.json({
       id: updated._id.toString(),
       name: updated.name,
@@ -429,6 +459,18 @@ exports.deleteProject = async (req, res, next) => {
       { $pull: { projectHistory: toObjectId(projectId) } }
     );
     await Team.updateMany({ projectId: toObjectId(projectId) }, { projectId: null });
+
+    const board = await Board.findOne({ projectId: toObjectId(projectId), type: 'company' }).lean();
+    if (board) {
+      const columns = await BoardColumn.find({ boardId: board._id }).select('_id').lean();
+      const columnIds = columns.map((column) => column._id);
+      if (columnIds.length) {
+        await Card.deleteMany({ columnId: { $in: columnIds } });
+        await BoardColumn.deleteMany({ _id: { $in: columnIds } });
+      }
+      await Board.deleteOne({ _id: board._id });
+    }
+
     res.status(204).end();
   } catch (error) {
     next(error);

@@ -1,16 +1,21 @@
 import React, { useState, useEffect } from 'react';
-import { Routes, Route, useLocation } from 'react-router-dom';
+import { Routes, Route, useLocation, matchPath } from 'react-router-dom';
 import styles from './HomePage.module.css';
 import Sidebar from '../../components/Sidebar/Sidebar';
 import Header from '../../components/Header/Header';
 import ScreensPage from '../ScreensPage/ScreensPage';
 import { boardApi } from '../../api/boardApi';
+import { projectApi } from '../../api/projectApi';
 import ChatWidgetLite from '../../realtime/ChatWidgetLite';
+import CompanyProjectPage from '../CompanyProjectPage/CompanyProjectPage';
+import TasksPage from '../TasksPage/TasksPage';
 
 function HomePage() {
   const location = useLocation();
   const [boards, setBoards] = useState([]);
   const [isBoardsLoading, setIsBoardsLoading] = useState(true);
+  const [companyProjects, setCompanyProjects] = useState([]);
+  const [isCompanyLoading, setIsCompanyLoading] = useState(true);
 
   useEffect(() => {
     let isMounted = true;
@@ -34,7 +39,27 @@ function HomePage() {
       }
     };
 
+    const fetchCompanyProjects = async () => {
+      setIsCompanyLoading(true);
+      try {
+        const data = await projectApi.listAssigned();
+        if (isMounted) {
+          setCompanyProjects(Array.isArray(data) ? data : []);
+        }
+      } catch (error) {
+        console.error('Error fetching company projects:', error);
+        if (isMounted) {
+          setCompanyProjects([]);
+        }
+      } finally {
+        if (isMounted) {
+          setIsCompanyLoading(false);
+        }
+      }
+    };
+
     fetchBoards();
+    fetchCompanyProjects();
 
     return () => {
       isMounted = false;
@@ -42,21 +67,41 @@ function HomePage() {
   }, []);
 
   // Get current board ID from URL
-  const currentBoardId = boards.find(b => 
-    location.pathname.includes(encodeURIComponent(b.name))
-  )?.id;
+  const companyMatch = matchPath('/home/company/:projectId', location.pathname);
+  const currentCompanyProjectId = companyMatch?.params?.projectId || null;
+  const currentBoardId = companyMatch
+    ? null
+    : boards.find((b) => location.pathname.includes(encodeURIComponent(b.name)))?.id;
 
   return (
     <div className={styles.homePage}>
       <Sidebar 
         boards={boards} 
+        companyProjects={companyProjects}
         currentBoardId={currentBoardId}
+        currentCompanyProjectId={currentCompanyProjectId}
+        boardsLoading={isBoardsLoading}
+        companyProjectsLoading={isCompanyLoading}
         onBoardsChange={setBoards}
       />
       <main className={styles.mainContent}>
         <Header />
         <div className={styles.contentWrapper}>
           <Routes>
+            <Route
+              path="tasks"
+              element={<TasksPage companyProjects={companyProjects} />}
+            />
+            <Route
+              path="company/:projectId"
+              element={
+                <CompanyProjectPage
+                  projects={companyProjects}
+                  loading={isCompanyLoading}
+                  onProjectsChange={setCompanyProjects}
+                />
+              }
+            />
             <Route 
               path=":boardName" 
               element={
@@ -70,11 +115,11 @@ function HomePage() {
             <Route 
               index 
               element={
-                isBoardsLoading ? (
+                isBoardsLoading || isCompanyLoading ? (
                   <div className={styles.emptyState}>
-                    <p className={styles.emptyStateText}>Loading your boards...</p>
+                    <p className={styles.emptyStateText}>Loading your projects...</p>
                   </div>
-                ) : boards.length === 0 ? (
+                ) : boards.length === 0 && companyProjects.length === 0 ? (
                   <div className={styles.emptyState}>
                     <p className={styles.emptyStateText}>
                       Before starting your project, it is essential to{' '}
@@ -84,7 +129,7 @@ function HomePage() {
                   </div>
                 ) : (
                   <div className={styles.emptyState}>
-                    <p className={styles.emptyStateText}>No board selected</p>
+                    <p className={styles.emptyStateText}>No project selected</p>
                   </div>
                 )
               } 

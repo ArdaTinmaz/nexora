@@ -1,6 +1,7 @@
 const mongoose = require('mongoose');
 const Project = require('../models/Project');
 const Team = require('../models/Team');
+const Board = require('../models/Board');
 
 const toObjectId = (id) => new mongoose.Types.ObjectId(id);
 
@@ -118,6 +119,97 @@ const listProjects = async (ownerId) => {
     endDate: project.endDate,
     createdAt: project.createdAt,
   }));
+};
+
+const listProjectsForUser = async (userId) => {
+  if (!mongoose.Types.ObjectId.isValid(userId)) {
+    const error = new Error('Geçersiz kullanıcı');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const userObjectId = toObjectId(userId);
+  const teams = await Team.find({
+    $or: [{ leaderId: userObjectId }, { 'members.userId': userObjectId }],
+  }).lean();
+
+  const rolePriority = {
+    team_leader: 5,
+    admin: 4,
+    product_manager: 3,
+    scrum_master: 3,
+    developer: 2,
+    designer: 2,
+  };
+
+  const roleByProject = new Map();
+
+  const projectIds = new Set();
+  teams.forEach((team) => {
+    const isLeader = team.leaderId?.toString() === userId;
+    const memberRole = isLeader
+      ? 'team_leader'
+      : (team.members || []).find((member) => member.userId.toString() === userId)?.role;
+
+    const updateRole = (projectId) => {
+      if (!projectId || !memberRole) return;
+      const prev = roleByProject.get(projectId);
+      if (!prev || (rolePriority[memberRole] || 0) > (rolePriority[prev] || 0)) {
+        roleByProject.set(projectId, memberRole);
+      }
+    };
+
+    if (team.projectId) {
+      const projectKey = team.projectId.toString();
+      projectIds.add(projectKey);
+      updateRole(projectKey);
+    }
+    (team.projectHistory || []).forEach((entry) => {
+      if (!entry) return;
+      const projectKey = entry.toString();
+      projectIds.add(projectKey);
+      updateRole(projectKey);
+    });
+  });
+
+  const validIds = [...projectIds].filter((id) => mongoose.Types.ObjectId.isValid(id));
+  if (!validIds.length) return [];
+
+  const projects = await Project.find({ _id: { $in: validIds.map(toObjectId) } })
+    .sort({ createdAt: 1, _id: 1 })
+    .lean();
+
+  const boards = await Board.find({
+    projectId: { $in: validIds.map(toObjectId) },
+    type: 'company',
+  }).lean();
+
+  const boardByProject = boards.reduce((acc, board) => {
+    if (board.projectId) {
+      acc[board.projectId.toString()] = board;
+    }
+    return acc;
+  }, {});
+
+  return projects.map((project) => {
+    const role = roleByProject.get(project._id.toString()) || '';
+    const canEdit = ['team_leader', 'admin'].includes(role);
+    return {
+    id: project._id.toString(),
+    name: project.name,
+    ownerId: project.ownerId.toString(),
+    ownerName: project.ownerName || '',
+    parentProjectId: project.parentProjectId ? project.parentProjectId.toString() : null,
+    status: project.status || 'Active',
+    endDate: project.endDate,
+    createdAt: project.createdAt,
+    role,
+    canEdit,
+    icon: boardByProject[project._id.toString()]?.icon || 'project',
+    iconName: boardByProject[project._id.toString()]?.iconName || 'icon-Project',
+    background: boardByProject[project._id.toString()]?.background || '',
+    };
+  });
 };
 
 const createTeamForProject = async ({ projectId, name, leaderId, members = [], ownerId }) => {
@@ -239,6 +331,7 @@ const addMemberToTeam = async ({ projectId, teamId, ownerId, userId, role = 'dev
 module.exports = {
   createProject,
   listProjects,
+  listProjectsForUser,
   createTeamForProject,
   listTeamsByProject,
   addMemberToTeam,

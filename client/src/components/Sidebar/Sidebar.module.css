@@ -43,14 +43,55 @@
   flex-direction: column;
 }
 
-.boardsTitle {
+.sectionBlock {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-bottom: 24px;
+}
+
+.sectionToggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0 14px;
+  text-transform: uppercase;
+}
+
+.sectionTitle {
   font-family: var(--font-family);
   font-weight: 500;
   font-size: 12px;
   letter-spacing: -0.02em;
   color: rgba(255, 255, 255, 0.5);
-  margin: 0 0 14px 14px;
-  text-transform: uppercase;
+}
+
+.sectionChevron {
+  width: 8px;
+  height: 8px;
+  border-right: 2px solid rgba(255, 255, 255, 0.5);
+  border-bottom: 2px solid rgba(255, 255, 255, 0.5);
+  transform: rotate(45deg);
+  transition: transform 0.2s ease;
+  margin-left: 8px;
+}
+
+.sectionToggle.sectionOpen .sectionChevron {
+  transform: rotate(225deg);
+}
+
+.sectionEmpty {
+  font-family: var(--font-family);
+  font-weight: 400;
+  font-size: 12px;
+  letter-spacing: -0.02em;
+  color: rgba(255, 255, 255, 0.45);
+  padding: 0 14px;
+  margin: 0;
 }
 
 .createBoardBtn {
@@ -63,7 +104,7 @@
   border: none;
   border-radius: 8px;
   cursor: pointer;
-  margin-bottom: 40px;
+  margin-bottom: 20px;
   transition: opacity 0.2s ease;
   flex-shrink: 0;
 }
@@ -186,6 +227,7 @@
 .boardItem:hover .boardActions {
   opacity: 1;
 }
+
 
 .boardActionBtn {
   background: none;

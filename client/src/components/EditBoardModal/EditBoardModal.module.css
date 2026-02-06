@@ -88,6 +88,11 @@
   color: var(--text-secondary);
 }
 
+.input:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
 .section {
   display: flex;
   flex-direction: column;

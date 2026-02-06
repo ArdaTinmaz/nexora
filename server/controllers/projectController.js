@@ -1,6 +1,7 @@
 const {
   createProject,
   listProjects,
+  listProjectsForUser,
   createTeamForProject,
   listTeamsByProject,
   addMemberToTeam,
@@ -9,6 +10,15 @@ const {
 exports.getProjects = async (req, res, next) => {
   try {
     const projects = await listProjects(req.user.id);
+    res.json(projects);
+  } catch (error) {
+    next(error);
+  }
+};
+
+exports.getAssignedProjects = async (req, res, next) => {
+  try {
+    const projects = await listProjectsForUser(req.user.id);
     res.json(projects);
   } catch (error) {
     next(error);

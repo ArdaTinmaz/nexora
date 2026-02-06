@@ -3,7 +3,9 @@ const mongoose = require('mongoose');
 const { Schema } = mongoose;
 
 const boardSchema = new Schema({
-  userId: { type: Schema.Types.ObjectId, ref: 'User', required: true, index: true },
+  userId: { type: Schema.Types.ObjectId, ref: 'User', required: false, index: true },
+  projectId: { type: Schema.Types.ObjectId, ref: 'Project', default: null, index: true },
+  type: { type: String, enum: ['personal', 'company'], default: 'personal', index: true },
   name: { type: String, required: true },
   icon: { type: String, default: 'project' },
   iconName: { type: String, default: 'icon-Project' },

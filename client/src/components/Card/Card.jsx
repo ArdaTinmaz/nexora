@@ -130,40 +130,46 @@ function Card({ card, onEdit, onDelete, onMove, onMoveButtonClick, onView, colum
                 )}
 
                 {/* Move button */}
-                <button
-                  className={styles.actionBtn}
-                  type="button"
-                  onClick={handleMoveButtonClick}
-                  title="Move card"
-                >
-                  <svg width="24" height="24" viewBox="0 0 32 32">
-                    <use href="/sprites.svg#icon-arrow-circle-broken-right"></use>
-                  </svg>
-                </button>
+                {onMoveButtonClick && (
+                  <button
+                    className={styles.actionBtn}
+                    type="button"
+                    onClick={handleMoveButtonClick}
+                    title="Move card"
+                  >
+                    <svg width="24" height="24" viewBox="0 0 32 32">
+                      <use href="/sprites.svg#icon-arrow-circle-broken-right"></use>
+                    </svg>
+                  </button>
+                )}
 
                 {/* Edit button */}
-                <button
-                  className={styles.actionBtn}
-                  type="button"
-                  onClick={handleEdit}
-                  title="Edit card"
-                >
-                  <svg width="24" height="24" viewBox="0 0 32 32">
-                    <use href="/sprites.svg#icon-pencil-01"></use>
-                  </svg>
-                </button>
+                {onEdit && (
+                  <button
+                    className={styles.actionBtn}
+                    type="button"
+                    onClick={handleEdit}
+                    title="Edit card"
+                  >
+                    <svg width="24" height="24" viewBox="0 0 32 32">
+                      <use href="/sprites.svg#icon-pencil-01"></use>
+                    </svg>
+                  </button>
+                )}
 
                 {/* Delete button */}
-                <button
-                  className={styles.actionBtn}
-                  type="button"
-                  onClick={handleDelete}
-                  title="Delete card"
-                >
-                  <svg width="24" height="24" viewBox="0 0 32 32">
-                    <use href="/sprites.svg#icon-trash-04"></use>
-                  </svg>
-                </button>
+                {onDelete && (
+                  <button
+                    className={styles.actionBtn}
+                    type="button"
+                    onClick={handleDelete}
+                    title="Delete card"
+                  >
+                    <svg width="24" height="24" viewBox="0 0 32 32">
+                      <use href="/sprites.svg#icon-trash-04"></use>
+                    </svg>
+                  </button>
+                )}
               </div>
             </div>
           </div>

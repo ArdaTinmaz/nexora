@@ -54,8 +54,14 @@ const mapCard = (doc) => ({
   updatedAt: doc.updatedAt,
 });
 
+const personalBoardQuery = (boardId, userId) => ({
+  _id: boardId,
+  userId,
+  $or: [{ type: 'personal' }, { type: { $exists: false } }],
+});
+
 const ensureBoardForUser = async (boardId, userId) => {
-  const board = await Board.findOne({ _id: boardId, userId }).lean();
+  const board = await Board.findOne(personalBoardQuery(boardId, userId)).lean();
 
   if (!board) {
     throw notFound('Board bulunamadı');
@@ -81,7 +87,10 @@ const getBoards = async (req, res, next) => {
     }
 
     const userObjectId = toObjectId(userId, 'Geçersiz kullanıcı');
-    const boards = await Board.find({ userId: userObjectId })
+    const boards = await Board.find({
+      userId: userObjectId,
+      $or: [{ type: 'personal' }, { type: { $exists: false } }],
+    })
       .sort({ createdAt: 1 })
       .lean();
 
@@ -106,6 +115,7 @@ const createBoard = async (req, res, next) => {
     const timestamp = now();
     const board = await Board.create({
       userId: toObjectId(userId, 'Geçersiz kullanıcı'),
+      type: 'personal',
       name: name.trim(),
       icon,
       iconName,
@@ -182,7 +192,7 @@ const updateBoard = async (req, res, next) => {
     };
 
     const updated = await Board.findOneAndUpdate(
-      { _id: boardId, userId: userObjectId },
+      personalBoardQuery(boardId, userObjectId),
       nextBoard,
       { new: true }
     ).lean();
@@ -208,7 +218,7 @@ const deleteBoard = async (req, res, next) => {
     }
 
     const userObjectId = toObjectId(userId, 'Geçersiz kullanıcı');
-    const board = await Board.findOneAndDelete({ _id: boardId, userId: userObjectId }).lean();
+    const board = await Board.findOneAndDelete(personalBoardQuery(boardId, userObjectId)).lean();
     if (!board) {
       throw notFound('Board bulunamadı');
     }
@@ -238,7 +248,7 @@ const updateBoardBackground = async (req, res, next) => {
 
     const updatedAt = now();
     const updated = await Board.findOneAndUpdate(
-      { _id: boardId, userId: userObjectId },
+      personalBoardQuery(boardId, userObjectId),
       { background, updatedAt },
       { new: true }
     ).lean();

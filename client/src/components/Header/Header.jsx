@@ -1,13 +1,17 @@
 import React, { useEffect, useState } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import styles from './Header.module.css';
 import UserInfoModal from '../UserInfoModal/UserInfoModal';
 import { AUTH_STORAGE_KEY } from '../../config';
 import userApi from '../../api/userApi';
 
 function Header() {
+  const location = useLocation();
+  const navigate = useNavigate();
   const [isUserInfoModalOpen, setIsUserInfoModalOpen] = useState(false);
   const [user, setUser] = useState(null);
   const [error, setError] = useState('');
+  const isTasksActive = location.pathname.includes('/home/tasks');
 
   const getBackendOrigin = () => {
     const apiBase = process.env.REACT_APP_API_URL || 'http://localhost:5001/api';
@@ -57,6 +61,13 @@ function Header() {
       <header className={styles.header}>
         <div className={styles.headerTop}>
           <div className={styles.headerRight}>
+            <button
+              className={`${styles.tasksBtn} ${isTasksActive ? styles.tasksActive : ''}`}
+              type="button"
+              onClick={() => navigate('/home/tasks')}
+            >
+              Tasks
+            </button>
             <button 
               className={styles.userBtn} 
               type="button"

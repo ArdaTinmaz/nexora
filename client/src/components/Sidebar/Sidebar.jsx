@@ -18,13 +18,23 @@ const iconMap = {
   'ring-blue': 'icon-Ring-blue',
 };
 
-function Sidebar({ boards, currentBoardId, onBoardsChange }) {
+function Sidebar({
+  boards,
+  companyProjects = [],
+  currentBoardId,
+  currentCompanyProjectId,
+  boardsLoading = false,
+  companyProjectsLoading = false,
+  onBoardsChange,
+}) {
   const navigate = useNavigate();
   const [isNewBoardModalOpen, setIsNewBoardModalOpen] = useState(false);
   const [isEditBoardModalOpen, setIsEditBoardModalOpen] = useState(false);
   const [isNeedHelpModalOpen, setIsNeedHelpModalOpen] = useState(false);
   const [boardToEdit, setBoardToEdit] = useState(null);
   const [boardToDelete, setBoardToDelete] = useState(null);
+  const [isCompanyOpen, setIsCompanyOpen] = useState(true);
+  const [isPersonalOpen, setIsPersonalOpen] = useState(true);
 
   const handleCreateBoard = () => {
     setIsNewBoardModalOpen(true);
@@ -54,6 +64,11 @@ function Sidebar({ boards, currentBoardId, onBoardsChange }) {
     e.stopPropagation();
     setBoardToEdit(board);
     setIsEditBoardModalOpen(true);
+  };
+
+  const handleEditCompanyProject = async (project, e) => {
+    e.stopPropagation();
+    navigate(`/home/company/${project.id}?editBoard=1`);
   };
 
   const handleEditBoardSubmit = async (boardData) => {
@@ -132,61 +147,141 @@ function Sidebar({ boards, currentBoardId, onBoardsChange }) {
           <span className={styles.logoText}>Nexora</span>
         </div>
 
-        {/* My boards section */}
+        {/* Projects section */}
         <div className={styles.boardsSection}>
-          <h2 className={styles.boardsTitle}>My boards</h2>
-          <button 
-            className={styles.createBoardBtn}
-            onClick={handleCreateBoard}
-            type="button"
-          >
-            <span className={styles.createBoardText}>Create a new board</span>
-            <div className={styles.plusIconContainer}>
-              <svg className={styles.plusIcon} width="20" height="20" viewBox="0 0 32 32">
-                <use href="/sprites.svg#icon-big-plus"></use>
-              </svg>
-            </div>
-          </button>
+          <div className={styles.sectionBlock}>
+            <button
+              className={`${styles.sectionToggle} ${isCompanyOpen ? styles.sectionOpen : ''}`}
+              type="button"
+              onClick={() => setIsCompanyOpen((prev) => !prev)}
+              aria-expanded={isCompanyOpen}
+            >
+              <span className={styles.sectionTitle}>Company projects</span>
+              <span className={styles.sectionChevron} />
+            </button>
 
-          {/* Board list */}
-          {boards.length > 0 && (
-            <ul className={styles.boardList}>
-              {boards.map((board) => (
-                <li 
-                  key={board.id} 
-                  className={`${styles.boardItem} ${currentBoardId === board.id ? styles.active : ''}`}
-                  onClick={() => navigate(`/home/${encodeURIComponent(board.name)}`)}
+            {isCompanyOpen && (
+              <>
+                {companyProjectsLoading ? (
+                  <p className={styles.sectionEmpty}>Loading company projects...</p>
+                ) : companyProjects.length > 0 ? (
+                  <ul className={styles.boardList}>
+                    {companyProjects.map((project) => {
+                      const roleValue = String(project.role || '').toLowerCase();
+                      const canEdit = typeof project.canEdit === 'boolean'
+                        ? project.canEdit
+                        : ['team_leader', 'admin'].includes(roleValue);
+                      return (
+                        <li
+                          key={project.id}
+                          className={`${styles.boardItem} ${styles.companyItem} ${
+                            currentCompanyProjectId === project.id ? styles.active : ''
+                          }`}
+                          onClick={() => navigate(`/home/company/${project.id}`)}
+                        >
+                          <div className={styles.boardIcon}>
+                            <svg width="18" height="18" viewBox="0 0 32 32">
+                              <use href={`/sprites.svg#${project.iconName || iconMap[project.icon] || 'icon-Project'}`}></use>
+                            </svg>
+                          </div>
+                          <span className={styles.boardName}>{project.name}</span>
+                          {canEdit && (
+                            <div className={styles.boardActions}>
+                              <button
+                                className={styles.boardActionBtn}
+                                type="button"
+                                onClick={(e) => handleEditCompanyProject(project, e)}
+                              >
+                                <svg width="16" height="16" viewBox="0 0 32 32">
+                                  <use href="/sprites.svg#icon-pencil-01"></use>
+                                </svg>
+                              </button>
+                            </div>
+                          )}
+                        </li>
+                      );
+                    })}
+                  </ul>
+                ) : (
+                  <p className={styles.sectionEmpty}>No company projects assigned.</p>
+                )}
+              </>
+            )}
+          </div>
+
+          <div className={styles.sectionBlock}>
+            <button
+              className={`${styles.sectionToggle} ${isPersonalOpen ? styles.sectionOpen : ''}`}
+              type="button"
+              onClick={() => setIsPersonalOpen((prev) => !prev)}
+              aria-expanded={isPersonalOpen}
+            >
+              <span className={styles.sectionTitle}>My boards</span>
+              <span className={styles.sectionChevron} />
+            </button>
+
+            {isPersonalOpen && (
+              <>
+                <button 
+                  className={styles.createBoardBtn}
+                  onClick={handleCreateBoard}
+                  type="button"
                 >
-                  <div className={styles.boardIcon}>
-                    <svg width="18" height="18" viewBox="0 0 32 32">
-                      <use href={`/sprites.svg#${board.iconName || iconMap[board.icon] || 'icon-Project'}`}></use>
+                  <span className={styles.createBoardText}>Create a new board</span>
+                  <div className={styles.plusIconContainer}>
+                    <svg className={styles.plusIcon} width="20" height="20" viewBox="0 0 32 32">
+                      <use href="/sprites.svg#icon-big-plus"></use>
                     </svg>
                   </div>
-                  <span className={styles.boardName}>{board.name}</span>
-                  <div className={styles.boardActions}>
-                    <button 
-                      className={styles.boardActionBtn} 
-                      type="button"
-                      onClick={(e) => handleEditBoard(board, e)}
-                    >
-                      <svg width="16" height="16" viewBox="0 0 32 32">
-                        <use href="/sprites.svg#icon-pencil-01"></use>
-                      </svg>
-                    </button>
-                    <button 
-                      className={styles.boardActionBtn} 
-                      type="button"
-                      onClick={(e) => handleDeleteBoard(board.id, e)}
-                    >
-                      <svg width="16" height="16" viewBox="0 0 32 32">
-                        <use href="/sprites.svg#icon-trash-04"></use>
-                      </svg>
-                    </button>
-                  </div>
-                </li>
-              ))}
-            </ul>
-          )}
+                </button>
+
+                {boardsLoading ? (
+                  <p className={styles.sectionEmpty}>Loading your boards...</p>
+                ) : boards.length > 0 ? (
+                  <ul className={styles.boardList}>
+                    {boards.map((board) => (
+                      <li 
+                        key={board.id} 
+                        className={`${styles.boardItem} ${
+                          currentBoardId === board.id ? styles.active : ''
+                        }`}
+                        onClick={() => navigate(`/home/${encodeURIComponent(board.name)}`)}
+                      >
+                        <div className={styles.boardIcon}>
+                          <svg width="18" height="18" viewBox="0 0 32 32">
+                            <use href={`/sprites.svg#${board.iconName || iconMap[board.icon] || 'icon-Project'}`}></use>
+                          </svg>
+                        </div>
+                        <span className={styles.boardName}>{board.name}</span>
+                        <div className={styles.boardActions}>
+                          <button 
+                            className={styles.boardActionBtn} 
+                            type="button"
+                            onClick={(e) => handleEditBoard(board, e)}
+                          >
+                            <svg width="16" height="16" viewBox="0 0 32 32">
+                              <use href="/sprites.svg#icon-pencil-01"></use>
+                            </svg>
+                          </button>
+                          <button 
+                            className={styles.boardActionBtn} 
+                            type="button"
+                            onClick={(e) => handleDeleteBoard(board.id, e)}
+                          >
+                            <svg width="16" height="16" viewBox="0 0 32 32">
+                              <use href="/sprites.svg#icon-trash-04"></use>
+                            </svg>
+                          </button>
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className={styles.sectionEmpty}>No personal boards yet.</p>
+                )}
+              </>
+            )}
+          </div>
         </div>
 
         <div className={styles.footerActions}>

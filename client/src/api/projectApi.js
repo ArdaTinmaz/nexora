@@ -30,6 +30,7 @@ const request = async (path, options = {}) => {
 
 export const projectApi = {
   list: () => request('/projects'),
+  listAssigned: () => request('/projects/assigned'),
   create: ({ name, parentProjectId }) =>
     request('/projects', {
       method: 'POST',
