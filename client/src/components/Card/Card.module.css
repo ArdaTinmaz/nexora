@@ -10,16 +10,39 @@
   border-left: 4px solid;
   position: relative;
   width: 350px;
-  min-height: 154px;
+  min-height: 170px;
   box-sizing: border-box;
   overflow: visible;
   z-index: 1;
+  cursor: pointer;
 }
 
 .card:hover {
   transform: translateY(-2px);
   box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
   z-index: 2;
+}
+
+.cardCompleted {
+  opacity: 0.9;
+  border-left-color: #7acb97 !important;
+}
+
+.titleRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.completedBadge {
+  background: rgba(122, 203, 151, 0.15);
+  border: 1px solid rgba(122, 203, 151, 0.35);
+  color: #7acb97;
+  font-size: 10px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  white-space: nowrap;
 }
 
 .cardTitle {
@@ -50,7 +73,7 @@
 .cardMeta {
   display: flex;
   flex-direction: column;
-  gap: 0;
+  gap: 8px;
   margin-top: 6px;
   padding-top: 8px;
   border-top: 1px solid rgba(255, 255, 255, 0.1);
@@ -124,14 +147,10 @@
   position: relative;
 }
 
-.cardActions {
-  display: none;
-}
-
 .actionButtons {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   position: relative;
   flex-shrink: 0;
   z-index: 10;
@@ -147,7 +166,7 @@
   justify-content: center;
   color: rgba(255, 255, 255, 0.6);
   transition: color 0.2s ease, opacity 0.2s ease;
-  opacity: 1; /* Görselde iconlar tam görünür */
+  opacity: 1;
   flex-shrink: 0;
   width: 24px;
   height: 24px;
@@ -170,4 +189,66 @@
 .bellBtn {
   color: var(--accent-green) !important;
   opacity: 1 !important;
+}
+
+.ownerRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.ownerInfo {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  flex: 1;
+}
+
+.ownerAvatar,
+.ownerFallback {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.ownerAvatar {
+  object-fit: cover;
+}
+
+.ownerFallback {
+  background: rgba(255, 255, 255, 0.18);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.ownerName {
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.72);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ownerActionBtn {
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: rgba(255, 255, 255, 0.04);
+  color: rgba(255, 255, 255, 0.86);
+  border-radius: 8px;
+  padding: 4px 8px;
+  font-size: 11px;
+  line-height: 1.2;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.ownerActionBtn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }

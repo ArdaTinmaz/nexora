@@ -11,7 +11,13 @@ const cardSchema = new Schema({
     enum: ['without', 'low', 'medium', 'high'],
     default: 'without',
   },
+  position: { type: Number, default: 0 },
   deadline: { type: String, default: null },
+  completed: { type: Boolean, default: false },
+  completedAt: { type: Number, default: null },
+  ownerId: { type: Schema.Types.ObjectId, ref: 'User', default: null, index: true },
+  ownerName: { type: String, default: '' },
+  ownerAvatarURL: { type: String, default: '' },
   createdAt: { type: Number, default: Date.now },
   updatedAt: { type: Number, default: Date.now },
 });

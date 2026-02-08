@@ -1,7 +1,7 @@
 /* Sidebar */
 .sidebar {
   width: 280px;
-  min-height: 100vh;
+  height: 100vh;
   background-color: #121212;
   padding: 24px 14px;
   display: flex;
@@ -35,19 +35,19 @@
 /* Boards section */
 .boardsSection {
   flex: 1;
-  overflow-y: auto;
-  overflow-x: hidden;
+  overflow: hidden;
   margin-bottom: 24px;
   min-height: 0;
   display: flex;
   flex-direction: column;
+  gap: 24px;
 }
 
 .sectionBlock {
   display: flex;
   flex-direction: column;
   gap: 12px;
-  margin-bottom: 24px;
+  min-height: 0;
 }
 
 .sectionToggle {
@@ -143,7 +143,10 @@
   list-style: none;
   padding: 0;
   margin: 0;
-  max-height: calc(61px * 5 + 4px * 4);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: min(calc(61px * 4 + 4px * 3), 40vh);
   overflow-y: auto;
   overflow-x: hidden;
 }
@@ -155,7 +158,7 @@
   width: 252px;
   height: 61px;
   padding: 14px;
-  margin-bottom: 4px;
+  margin-bottom: 0;
   background-color: #1F1F1F;
   border-radius: 8px;
   cursor: pointer;
@@ -253,23 +256,19 @@
 }
 
 /* Sidebar scrollbar */
-.boardsSection::-webkit-scrollbar,
 .boardList::-webkit-scrollbar {
   width: 8px;
 }
 
-.boardsSection::-webkit-scrollbar-track,
 .boardList::-webkit-scrollbar-track {
   background: transparent;
 }
 
-.boardsSection::-webkit-scrollbar-thumb,
 .boardList::-webkit-scrollbar-thumb {
   background: rgba(190, 219, 176, 0.3);
   border-radius: 4px;
 }
 
-.boardsSection::-webkit-scrollbar-thumb:hover,
 .boardList::-webkit-scrollbar-thumb:hover {
   background: rgba(190, 219, 176, 0.5);
 }

@@ -8,6 +8,26 @@ const priorities = [
   { id: 'high', label: 'High', color: '#BEDBB0' },
 ];
 
+const normalizeToDateInput = (value) => {
+  if (!value) return '';
+  if (typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    return value;
+  }
+  if (typeof value === 'string' && /^\d+$/.test(value)) {
+    const dateFromTs = new Date(Number(value));
+    return Number.isNaN(dateFromTs.getTime()) ? '' : dateFromTs.toISOString().slice(0, 10);
+  }
+  if (typeof value === 'number') {
+    const dateFromTs = new Date(value);
+    return Number.isNaN(dateFromTs.getTime()) ? '' : dateFromTs.toISOString().slice(0, 10);
+  }
+  if (typeof value === 'string' && value.includes('T')) {
+    return value.split('T')[0];
+  }
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? '' : parsed.toISOString().slice(0, 10);
+};
+
 function EditCardModal({ isOpen, onClose, onEdit, card }) {
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
@@ -20,7 +40,7 @@ function EditCardModal({ isOpen, onClose, onEdit, card }) {
       setTitle(card.title || '');
       setDescription(card.description || '');
       setPriority(card.priority || 'without');
-      setDeadline(card.deadline ? card.deadline.split('T')[0] : '');
+      setDeadline(normalizeToDateInput(card.deadline));
     }
   }, [card]);
 
@@ -174,4 +194,3 @@ function EditCardModal({ isOpen, onClose, onEdit, card }) {
 }
 
 export default EditCardModal;
-

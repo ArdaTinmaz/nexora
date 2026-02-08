@@ -42,6 +42,15 @@ export const taskApi = {
       method: 'POST',
       body: JSON.stringify(payload),
     }),
+  update: (assignmentId, payload) =>
+    request(`/tasks/${assignmentId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(payload),
+    }),
+  remove: (assignmentId) =>
+    request(`/tasks/${assignmentId}`, {
+      method: 'DELETE',
+    }),
   transfer: (assignmentId, columnId) =>
     request(`/tasks/${assignmentId}/transfer`, {
       method: 'POST',

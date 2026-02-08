@@ -23,6 +23,8 @@ router
   .route('/:boardId/columns')
   .post(boardController.createColumn);
 
+router.patch('/:boardId/columns/reorder', boardController.reorderColumns);
+
 router
   .route('/:boardId/columns/:columnId')
   .patch(boardController.updateColumn)
@@ -36,6 +38,11 @@ router
   .route('/:boardId/columns/:columnId/cards/:cardId')
   .patch(boardController.updateCard)
   .delete(boardController.deleteCard);
+
+router.patch(
+  '/:boardId/columns/:columnId/cards/:cardId/completion',
+  boardController.setCardCompletion
+);
 
 router.patch('/:boardId/cards/move', boardController.moveCard);
 

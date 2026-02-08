@@ -55,6 +55,12 @@ export const companyBoardApi = {
       body: JSON.stringify(columnData),
     }),
 
+  reorderColumns: (projectId, columnIds) =>
+    request(`/projects/${projectId}/board/columns/reorder`, {
+      method: 'PATCH',
+      body: JSON.stringify({ columnIds }),
+    }),
+
   deleteColumn: (projectId, columnId) =>
     request(`/projects/${projectId}/board/columns/${columnId}`, {
       method: 'DELETE',
@@ -72,14 +78,26 @@ export const companyBoardApi = {
       body: JSON.stringify(cardData),
     }),
 
+  setCardCompletion: (projectId, columnId, cardId, completed) =>
+    request(`/projects/${projectId}/board/columns/${columnId}/cards/${cardId}/completion`, {
+      method: 'PATCH',
+      body: JSON.stringify({ completed }),
+    }),
+
+  setCardOwnership: (projectId, columnId, cardId, action) =>
+    request(`/projects/${projectId}/board/columns/${columnId}/cards/${cardId}/claim`, {
+      method: 'PATCH',
+      body: JSON.stringify({ action }),
+    }),
+
   deleteCard: (projectId, columnId, cardId) =>
     request(`/projects/${projectId}/board/columns/${columnId}/cards/${cardId}`, {
       method: 'DELETE',
     }),
 
-  moveCard: (projectId, fromColumnId, toColumnId, cardId) =>
+  moveCard: (projectId, fromColumnId, toColumnId, cardId, toIndex) =>
     request(`/projects/${projectId}/board/cards/move`, {
       method: 'PATCH',
-      body: JSON.stringify({ fromColumnId, toColumnId, cardId }),
+      body: JSON.stringify({ fromColumnId, toColumnId, cardId, toIndex }),
     }),
 };

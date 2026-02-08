@@ -68,6 +68,7 @@ function Header() {
             >
               Tasks
             </button>
+            <span className={styles.profileDivider} aria-hidden="true" />
             <button 
               className={styles.userBtn} 
               type="button"

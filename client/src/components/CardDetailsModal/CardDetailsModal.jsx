@@ -11,9 +11,13 @@ const priorityMeta = {
 function CardDetailsModal({ isOpen, onClose, card }) {
   if (!isOpen || !card) return null;
 
-  const formatDate = (dateString) => {
-    if (!dateString) return '';
-    const date = new Date(dateString);
+  const formatDate = (value) => {
+    if (!value) return '';
+    const date =
+      typeof value === 'string' && /^\d+$/.test(value)
+        ? new Date(Number(value))
+        : new Date(value);
+    if (Number.isNaN(date.getTime())) return '';
     return date.toLocaleDateString('en-US', {
       month: 'long',
       day: 'numeric',
@@ -67,6 +71,16 @@ function CardDetailsModal({ isOpen, onClose, card }) {
         <div className={styles.section}>
           <p className={styles.label}>Deadline</p>
           <p className={styles.value}>{card.deadline ? formatDate(card.deadline) : 'No deadline'}</p>
+        </div>
+
+        <div className={styles.section}>
+          <p className={styles.label}>Status</p>
+          <p className={styles.value}>{card.completed ? 'Completed' : 'In progress'}</p>
+        </div>
+
+        <div className={styles.section}>
+          <p className={styles.label}>Assigned to</p>
+          <p className={styles.value}>{card.ownerName || 'Unassigned'}</p>
         </div>
       </div>
     </div>

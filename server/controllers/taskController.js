@@ -7,6 +7,7 @@ const Board = require('../models/Board');
 const BoardColumn = require('../models/BoardColumn');
 const Card = require('../models/Card');
 const { findUserRoleInTeam } = require('../realtime/roomAuth');
+const { listTeamsForUser } = require('../services/channelService');
 
 const toObjectId = (value) => new mongoose.Types.ObjectId(value);
 
@@ -26,6 +27,32 @@ const notFound = (message = 'Kaynak bulunamadı') => {
   const error = new Error(message);
   error.statusCode = 404;
   return error;
+};
+
+const toCardDeadline = (value) => {
+  if (value === null || typeof value === 'undefined' || value === '') return null;
+
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    const parsed = new Date(value);
+    if (Number.isNaN(parsed.getTime())) return null;
+    return parsed.toISOString().slice(0, 10);
+  }
+
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (!trimmed) return null;
+    if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) return trimmed;
+    if (/^\d+$/.test(trimmed)) {
+      const parsed = new Date(Number(trimmed));
+      if (Number.isNaN(parsed.getTime())) return null;
+      return parsed.toISOString().slice(0, 10);
+    }
+    const parsed = new Date(trimmed);
+    if (Number.isNaN(parsed.getTime())) return null;
+    return parsed.toISOString().slice(0, 10);
+  }
+
+  return null;
 };
 
 const getTeamForLeader = async ({ teamId, userId }) => {
@@ -89,6 +116,7 @@ const mapAssignment = (doc, maps) => ({
   deadline: doc.deadline,
   assignedBy: doc.assignedBy.toString(),
   assignedByName: maps.userNameMap[doc.assignedBy.toString()] || '',
+  assignedToName: maps.userNameMap[doc.assignedTo.toString()] || '',
   assignedTo: doc.assignedTo.toString(),
   teamId: doc.teamId.toString(),
   teamName: maps.teamNameMap[doc.teamId.toString()] || '',
@@ -98,6 +126,21 @@ const mapAssignment = (doc, maps) => ({
   status: doc.status,
 });
 
+const canManageAssignment = async ({ assignment, userId }) => {
+  if (
+    assignment.assignedTo.toString() === userId ||
+    assignment.assignedBy.toString() === userId
+  ) {
+    return true;
+  }
+
+  const team = await Team.findById(assignment.teamId).lean();
+  if (!team) return false;
+
+  const role = findUserRoleInTeam(team, userId);
+  return role === 'team_leader';
+};
+
 exports.getMyAssignments = async (req, res, next) => {
   try {
     const userId = req.user?.id;
@@ -105,11 +148,36 @@ exports.getMyAssignments = async (req, res, next) => {
       throw badRequest('Kullanıcı bilgisi eksik');
     }
 
-    const assignments = await TaskAssignment.find({ assignedTo: toObjectId(userId) })
+    const teamList = await listTeamsForUser(userId);
+    const isLeader = teamList.some((team) => team.role === 'team_leader');
+
+    const userObjectId = toObjectId(userId);
+    const scopedTeamIds = [
+      ...new Set(
+        teamList
+          .map((team) => team.id)
+          .filter((id) => mongoose.Types.ObjectId.isValid(id))
+      ),
+    ].map((id) => toObjectId(id));
+
+    const assignmentsQuery = isLeader
+      ? { teamId: { $in: scopedTeamIds } }
+      : {
+          $or: [{ assignedTo: userObjectId }, { assignedBy: userObjectId }],
+        };
+
+    const assignments = await TaskAssignment.find(assignmentsQuery)
       .sort({ assignedAt: -1 })
       .lean();
 
-    const userIds = [...new Set(assignments.map((a) => a.assignedBy.toString()))];
+    const userIds = [
+      ...new Set(
+        assignments.flatMap((assignment) => [
+          assignment.assignedBy.toString(),
+          assignment.assignedTo.toString(),
+        ])
+      ),
+    ];
     const teamIds = [...new Set(assignments.map((a) => a.teamId.toString()))];
     const projectIds = [...new Set(assignments.map((a) => a.projectId.toString()))];
 
@@ -213,6 +281,150 @@ exports.createAssignment = async (req, res, next) => {
   }
 };
 
+exports.updateAssignment = async (req, res, next) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) {
+      throw badRequest('Kullanıcı bilgisi eksik');
+    }
+
+    const { assignmentId } = req.params;
+    if (!mongoose.Types.ObjectId.isValid(assignmentId)) {
+      throw badRequest('assignmentId geçersiz');
+    }
+
+    const assignment = await TaskAssignment.findById(assignmentId).lean();
+    if (!assignment) {
+      throw notFound('Görev bulunamadı');
+    }
+
+    const canManage = await canManageAssignment({ assignment, userId });
+    if (!canManage) {
+      throw forbidden('Yetkisiz');
+    }
+
+    const {
+      title,
+      description,
+      priority,
+      deadline,
+      status,
+    } = req.body || {};
+
+    const updates = {};
+    if (typeof title !== 'undefined') {
+      if (!String(title).trim()) {
+        throw badRequest('Görev başlığı zorunlu');
+      }
+      updates.title = String(title).trim();
+    }
+    if (typeof description !== 'undefined') {
+      updates.description = String(description || '');
+    }
+    if (typeof priority !== 'undefined') {
+      if (!['without', 'low', 'medium', 'high'].includes(priority)) {
+        throw badRequest('priority geçersiz');
+      }
+      updates.priority = priority;
+    }
+    if (typeof deadline !== 'undefined') {
+      if (deadline === null || deadline === '') {
+        updates.deadline = null;
+      } else {
+        const parsedDeadline = Number(deadline);
+        if (!Number.isFinite(parsedDeadline)) {
+          throw badRequest('deadline geçersiz');
+        }
+        updates.deadline = parsedDeadline;
+      }
+    }
+    if (typeof status !== 'undefined') {
+      if (!['pending', 'in-progress', 'completed'].includes(status)) {
+        throw badRequest('status geçersiz');
+      }
+      updates.status = status;
+    }
+
+    if (!Object.keys(updates).length) {
+      throw badRequest('Güncellenecek alan bulunamadı');
+    }
+
+    const updated = await TaskAssignment.findOneAndUpdate(
+      { _id: assignment._id },
+      updates,
+      { new: true }
+    ).lean();
+
+    if (
+      assignment.cardId &&
+      mongoose.Types.ObjectId.isValid(assignment.cardId)
+    ) {
+      const cardUpdates = {};
+      if (typeof updates.title !== 'undefined') {
+        cardUpdates.title = updates.title;
+      }
+      if (typeof updates.description !== 'undefined') {
+        cardUpdates.description = updates.description;
+      }
+      if (typeof updates.priority !== 'undefined') {
+        cardUpdates.priority = updates.priority;
+      }
+      if (typeof updates.deadline !== 'undefined') {
+        cardUpdates.deadline = toCardDeadline(updates.deadline);
+      }
+
+      if (Object.keys(cardUpdates).length) {
+        cardUpdates.updatedAt = Date.now();
+        await Card.updateOne({ _id: toObjectId(assignment.cardId) }, cardUpdates);
+      }
+    }
+
+    res.json({
+      id: updated._id.toString(),
+      title: updated.title,
+      description: updated.description,
+      priority: updated.priority,
+      deadline: updated.deadline,
+      status: updated.status,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+exports.deleteAssignment = async (req, res, next) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) {
+      throw badRequest('Kullanıcı bilgisi eksik');
+    }
+
+    const { assignmentId } = req.params;
+    if (!mongoose.Types.ObjectId.isValid(assignmentId)) {
+      throw badRequest('assignmentId geçersiz');
+    }
+
+    const assignment = await TaskAssignment.findById(assignmentId).lean();
+    if (!assignment) {
+      throw notFound('Görev bulunamadı');
+    }
+
+    const canManage = await canManageAssignment({ assignment, userId });
+    if (!canManage) {
+      throw forbidden('Yetkisiz');
+    }
+
+    if (assignment.cardId && mongoose.Types.ObjectId.isValid(assignment.cardId)) {
+      await Card.deleteOne({ _id: toObjectId(assignment.cardId) });
+    }
+
+    await TaskAssignment.deleteOne({ _id: assignment._id });
+    res.status(204).end();
+  } catch (error) {
+    next(error);
+  }
+};
+
 exports.transferAssignment = async (req, res, next) => {
   try {
     const userId = req.user?.id;
@@ -249,13 +461,25 @@ exports.transferAssignment = async (req, res, next) => {
       throw notFound('Sütun bulunamadı');
     }
 
+    const [assignee, latestCard] = await Promise.all([
+      UserModel.model.findById(assignment.assignedTo).lean(),
+      Card.findOne({ columnId: column._id }).sort({ position: -1, _id: -1 }).lean(),
+    ]);
+
+    const nextPosition = Number.isFinite(latestCard?.position) ? latestCard.position + 1 : 0;
     const timestamp = Date.now();
     const card = await Card.create({
       columnId: column._id,
       title: assignment.title || 'Untitled task',
       description: assignment.description || '',
       priority: assignment.priority || 'without',
-      deadline: assignment.deadline ?? null,
+      position: nextPosition,
+      deadline: toCardDeadline(assignment.deadline),
+      completed: false,
+      completedAt: null,
+      ownerId: assignment.assignedTo,
+      ownerName: assignee?.name || assignee?.email || '',
+      ownerAvatarURL: assignee?.avatarURL || '',
       createdAt: timestamp,
       updatedAt: timestamp,
     });

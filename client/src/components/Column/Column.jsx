@@ -11,26 +11,43 @@ function Column({
   onEditCard,
   onViewCard,
   onDeleteCard,
-  onMoveCard,
   onMoveButtonClick,
   allColumns,
   priorityFilter,
+  cardFilterFn,
+  currentUserId,
+  canManage = false,
+  onToggleCardCompletion,
+  onToggleCardOwnership,
+  onColumnDragStart,
+  onColumnDragEnd,
+  onColumnDragOver,
+  onColumnDrop,
+  isColumnDragTarget = false,
+  onCardDragStart,
+  onCardDragEnd,
+  onCardDragOver,
+  onCardDrop,
+  isCardDropTarget = false,
+  dragCard,
 }) {
-  const filteredCards = priorityFilter && priorityFilter !== 'all'
-    ? cards.filter((card) => card.priority === priorityFilter)
-    : cards;
+  const filteredCards = cards.filter((card) => {
+    const priorityMatches = !(priorityFilter && priorityFilter !== 'all') || card.priority === priorityFilter;
+    const customMatches = typeof cardFilterFn === 'function' ? cardFilterFn(card) : true;
+    return priorityMatches && customMatches;
+  });
 
-  const handleEditColumn = (e) => {
-    e.preventDefault();
-    e.stopPropagation();
+  const handleEditColumn = (event) => {
+    event.preventDefault();
+    event.stopPropagation();
     if (onEditColumn && column) {
       onEditColumn(column);
     }
   };
 
-  const handleDeleteColumn = (e) => {
-    e.preventDefault();
-    e.stopPropagation();
+  const handleDeleteColumn = (event) => {
+    event.preventDefault();
+    event.stopPropagation();
     if (onDeleteColumn && column?.id) {
       onDeleteColumn(column.id);
     }
@@ -38,9 +55,54 @@ function Column({
 
   if (!column) return null;
 
+  const renderDropSlot = (slotIndex, key, showHint = false) => (
+    <div
+      key={key}
+      className={`${styles.cardDropSlot} ${showHint ? styles.cardDropSlotHint : ''}`}
+      onDragOver={(event) => {
+        if (onCardDragOver) {
+          onCardDragOver(event, column.id, slotIndex);
+        } else if (onCardDrop) {
+          event.preventDefault();
+        }
+      }}
+      onDrop={(event) => {
+        if (!onCardDrop) return;
+        event.preventDefault();
+        event.stopPropagation();
+        onCardDrop(column.id, slotIndex);
+      }}
+    >
+      {showHint ? 'Drop card here' : ''}
+    </div>
+  );
+
   return (
-    <div className={styles.column}>
-      <div className={styles.columnHeader}>
+    <div className={`${styles.column} ${isColumnDragTarget ? styles.columnDragOver : ''}`}>
+      <div
+        className={styles.columnHeader}
+        draggable={Boolean(canManage && onColumnDragStart)}
+        onDragStart={() => {
+          if (canManage && onColumnDragStart) {
+            onColumnDragStart(column.id);
+          }
+        }}
+        onDragEnd={() => {
+          if (canManage && onColumnDragEnd) {
+            onColumnDragEnd();
+          }
+        }}
+        onDragOver={(event) => {
+          if (canManage && onColumnDragOver) {
+            onColumnDragOver(event, column.id);
+          }
+        }}
+        onDrop={(event) => {
+          if (canManage && onColumnDrop) {
+            onColumnDrop(event, column.id);
+          }
+        }}
+      >
         <h3 className={styles.columnTitle}>{column.title}</h3>
         {(onEditColumn || onDeleteColumn) && (
           <div className={styles.columnActions}>
@@ -72,30 +134,105 @@ function Column({
         )}
       </div>
 
-      <div className={styles.cardsContainer}>
-        {filteredCards.map((card, index) => (
-            <Card
-              key={card.id}
-              card={card}
-              onEdit={onEditCard}
-              onView={onViewCard}
-              onDelete={onDeleteCard}
-              onMove={(cardId, targetColumnId) => {
-                if (onMoveCard && cardId && targetColumnId) {
-                  onMoveCard(cardId, column.id, targetColumnId);
-                }
-            }}
-            onMoveButtonClick={(card) => {
-              if (onMoveButtonClick && card) {
-                onMoveButtonClick(card, column.id);
-              }
-            }}
-            columns={allColumns}
-            currentColumnId={column.id}
-            isFirstCard={index === 0}
-            isLastCard={index === filteredCards.length - 1}
-          />
-        ))}
+      <div
+        className={`${styles.cardsContainer} ${isCardDropTarget ? styles.cardsDropActive : ''}`}
+        onDragOver={(event) => {
+          if (onCardDragOver) {
+            onCardDragOver(event, column.id);
+          } else if (onCardDrop) {
+            event.preventDefault();
+          }
+        }}
+        onDrop={(event) => {
+          if (!onCardDrop) return;
+          event.preventDefault();
+          onCardDrop(column.id, cards.length);
+        }}
+      >
+        {filteredCards.length === 0
+          ? renderDropSlot(cards.length, 'empty-drop-slot', true)
+          : filteredCards.flatMap((card, visibleIndex) => {
+            const actualIndex = cards.findIndex((item) => item.id === card.id);
+            const insertBeforeIndex = actualIndex >= 0 ? actualIndex : visibleIndex;
+            const insertAfterIndex = insertBeforeIndex + 1;
+
+            return [
+              visibleIndex === 0
+                ? renderDropSlot(insertBeforeIndex, `slot-before-${card.id}`)
+                : null,
+              <div
+                key={card.id}
+                className={styles.cardDragSlot}
+                onDragOver={(event) => {
+                  const rect = event.currentTarget.getBoundingClientRect();
+                  const shouldPlaceAfter = event.clientY - rect.top > rect.height / 2;
+                  let dynamicIndex = shouldPlaceAfter ? insertAfterIndex : insertBeforeIndex;
+                  if (dragCard?.fromColumnId === column.id) {
+                    const fromIndex = cards.findIndex((item) => item.id === dragCard.cardId);
+                    if (fromIndex !== -1) {
+                      dynamicIndex = fromIndex < insertBeforeIndex ? insertAfterIndex : insertBeforeIndex;
+                    }
+                  }
+                  if (onCardDragOver) {
+                    onCardDragOver(event, column.id, dynamicIndex);
+                  } else if (onCardDrop) {
+                    event.preventDefault();
+                  }
+                }}
+                onDrop={(event) => {
+                  if (!onCardDrop) return;
+                  event.preventDefault();
+                  event.stopPropagation();
+                  const rect = event.currentTarget.getBoundingClientRect();
+                  const shouldPlaceAfter = event.clientY - rect.top > rect.height / 2;
+                  let dynamicIndex = shouldPlaceAfter ? insertAfterIndex : insertBeforeIndex;
+                  if (dragCard?.fromColumnId === column.id) {
+                    const fromIndex = cards.findIndex((item) => item.id === dragCard.cardId);
+                    if (fromIndex !== -1) {
+                      dynamicIndex = fromIndex < insertBeforeIndex ? insertAfterIndex : insertBeforeIndex;
+                    }
+                  }
+                  onCardDrop(column.id, dynamicIndex);
+                }}
+              >
+                <Card
+                  card={card}
+                  onEdit={onEditCard}
+                  onView={onViewCard}
+                  onDelete={onDeleteCard}
+                  onMoveButtonClick={(nextCard) => {
+                    if (onMoveButtonClick && nextCard) {
+                      onMoveButtonClick(nextCard, column.id);
+                    }
+                  }}
+                  onDragStartCard={(nextCard) => {
+                    if (onCardDragStart && nextCard) {
+                      onCardDragStart(nextCard, column.id);
+                    }
+                  }}
+                  onDragEndCard={() => {
+                    if (onCardDragEnd) {
+                      onCardDragEnd();
+                    }
+                  }}
+                  onToggleCompletion={(nextCard, completed) => {
+                    if (onToggleCardCompletion && nextCard) {
+                      onToggleCardCompletion(nextCard, column.id, completed);
+                    }
+                  }}
+                  onToggleOwnership={(nextCard, action) => {
+                    if (onToggleCardOwnership && nextCard) {
+                      onToggleCardOwnership(nextCard, column.id, action);
+                    }
+                  }}
+                  currentUserId={currentUserId}
+                  canManage={canManage}
+                  columns={allColumns}
+                />
+              </div>,
+              renderDropSlot(insertAfterIndex, `slot-after-${card.id}`),
+            ].filter(Boolean);
+          })}
       </div>
 
       {onAddCard && (

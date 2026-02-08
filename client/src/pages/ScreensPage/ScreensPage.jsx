@@ -11,6 +11,7 @@ import Column from '../../components/Column/Column';
 import { boardApi } from '../../api/boardApi';
 import ConfirmModal from '../../components/ConfirmModal/ConfirmModal';
 import CardDetailsModal from '../../components/CardDetailsModal/CardDetailsModal';
+import { AUTH_STORAGE_KEY } from '../../config';
 
 function ScreensPage({ boards = [], onBoardsChange, boardsLoading = false }) {
   const { boardName } = useParams();
@@ -30,8 +31,91 @@ function ScreensPage({ boards = [], onBoardsChange, boardsLoading = false }) {
   const [cardDetails, setCardDetails] = useState(null);
   const [cardToMove, setCardToMove] = useState(null);
   const [cardToMoveColumnId, setCardToMoveColumnId] = useState(null);
-  const [priorityFilter, setPriorityFilter] = useState('all');
+  const [cardFilters, setCardFilters] = useState({
+    title: '',
+    dateFrom: '',
+    dateTo: '',
+    status: 'all',
+    assignee: 'all',
+    priority: 'all',
+  });
   const [loading, setLoading] = useState(true);
+  const [currentUserId, setCurrentUserId] = useState('');
+  const [dragColumnId, setDragColumnId] = useState('');
+  const [dragCard, setDragCard] = useState(null);
+  const [columnDropTargetId, setColumnDropTargetId] = useState('');
+  const [cardDropTargetId, setCardDropTargetId] = useState('');
+
+  const canManage = true;
+
+  const assigneeOptions = React.useMemo(() => {
+    const names = new Set();
+    columns.forEach((column) => {
+      (column.cards || []).forEach((card) => {
+        if (card.ownerName && card.ownerName.trim()) {
+          names.add(card.ownerName.trim());
+        }
+      });
+    });
+    return Array.from(names).sort((a, b) => a.localeCompare(b));
+  }, [columns]);
+
+  const toDateObject = (value) => {
+    if (!value) return null;
+    if (typeof value === 'number') {
+      const parsed = new Date(value);
+      return Number.isNaN(parsed.getTime()) ? null : parsed;
+    }
+    if (typeof value === 'string' && /^\d+$/.test(value)) {
+      const parsed = new Date(Number(value));
+      return Number.isNaN(parsed.getTime()) ? null : parsed;
+    }
+    const parsed = new Date(value);
+    return Number.isNaN(parsed.getTime()) ? null : parsed;
+  };
+
+  const matchesCardFilters = React.useCallback(
+    (card) => {
+      const query = cardFilters.title.trim().toLowerCase();
+      if (query) {
+        const title = String(card.title || '').toLowerCase();
+        if (!title.includes(query)) return false;
+      }
+
+      if (cardFilters.priority && cardFilters.priority !== 'all') {
+        if (card.priority !== cardFilters.priority) return false;
+      }
+
+      if (cardFilters.status && cardFilters.status !== 'all') {
+        const cardStatus = card.completed ? 'completed' : 'in-progress';
+        if (cardStatus !== cardFilters.status) return false;
+      }
+
+      if (cardFilters.assignee && cardFilters.assignee !== 'all') {
+        if (cardFilters.assignee === 'unassigned') {
+          if (card.ownerName && String(card.ownerName).trim()) return false;
+        } else if ((card.ownerName || '').trim() !== cardFilters.assignee) {
+          return false;
+        }
+      }
+
+      const dateFrom = toDateObject(cardFilters.dateFrom);
+      const dateTo = toDateObject(cardFilters.dateTo);
+      if (dateFrom || dateTo) {
+        const deadline = toDateObject(card.deadline);
+        if (!deadline) return false;
+        if (dateFrom && deadline < dateFrom) return false;
+        if (dateTo) {
+          const endOfDay = new Date(dateTo);
+          endOfDay.setHours(23, 59, 59, 999);
+          if (deadline > endOfDay) return false;
+        }
+      }
+
+      return true;
+    },
+    [cardFilters]
+  );
 
   const loadBoard = useCallback(async () => {
     if (!boardName) {
@@ -71,6 +155,16 @@ function ScreensPage({ boards = [], onBoardsChange, boardsLoading = false }) {
   useEffect(() => {
     loadBoard();
   }, [loadBoard]);
+
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem(AUTH_STORAGE_KEY);
+      const parsed = stored ? JSON.parse(stored) : {};
+      setCurrentUserId(parsed?.user?.id || '');
+    } catch {
+      setCurrentUserId('');
+    }
+  }, []);
 
   const updateBoardsList = useCallback(
     (updater) => {
@@ -249,32 +343,164 @@ function ScreensPage({ boards = [], onBoardsChange, boardsLoading = false }) {
     .flatMap((col) => col.cards || [])
     .find((c) => c.id === cardToDelete)?.title;
 
-  const handleMoveCard = async (cardId, fromColumnId, toColumnId) => {
+  const handleMoveCard = async (cardId, fromColumnId, toColumnId, toIndex) => {
     if (!board) return;
     try {
-      await boardApi.moveCard(board.id, fromColumnId, toColumnId, cardId);
-      const movingCard = columns
-        .find((col) => col.id === fromColumnId)
-        ?.cards?.find((c) => c.id === cardId);
-      if (!movingCard) return;
+      await boardApi.moveCard(board.id, fromColumnId, toColumnId, cardId, toIndex);
+      setColumns((prev) => {
+        if (fromColumnId === toColumnId) {
+          return prev.map((col) => {
+            if (col.id !== fromColumnId) return col;
+            const source = [...(col.cards || [])];
+            const fromIndex = source.findIndex((c) => c.id === cardId);
+            if (fromIndex === -1) return col;
+            const [moving] = source.splice(fromIndex, 1);
+            const insertIndex = Number.isInteger(toIndex)
+              ? Math.max(0, Math.min(toIndex, source.length))
+              : source.length;
+            source.splice(insertIndex, 0, moving);
+            return { ...col, cards: source };
+          });
+        }
 
-      setColumns((prev) =>
-        prev.map((col) => {
-          if (col.id === fromColumnId) {
-            return { ...col, cards: col.cards.filter((c) => c.id !== cardId) };
+        let movingCard = null;
+        const withoutSource = prev.map((col) => {
+          if (col.id !== fromColumnId) return col;
+          const sourceCards = [...(col.cards || [])];
+          const fromIndex = sourceCards.findIndex((c) => c.id === cardId);
+          if (fromIndex !== -1) {
+            [movingCard] = sourceCards.splice(fromIndex, 1);
           }
-          if (col.id === toColumnId) {
-            return { ...col, cards: [...(col.cards || []), movingCard] };
-          }
-          return col;
-        })
-      );
+          return { ...col, cards: sourceCards };
+        });
+
+        if (!movingCard) return prev;
+
+        return withoutSource.map((col) => {
+          if (col.id !== toColumnId) return col;
+          const nextCards = [...(col.cards || [])];
+          const insertIndex = Number.isInteger(toIndex)
+            ? Math.max(0, Math.min(toIndex, nextCards.length))
+            : nextCards.length;
+          nextCards.splice(insertIndex, 0, { ...movingCard, columnId: toColumnId });
+          return { ...col, cards: nextCards };
+        });
+      });
       setIsMoveCardModalOpen(false);
       setCardToMove(null);
       setCardToMoveColumnId(null);
     } catch (error) {
       console.error('Error moving card:', error);
     }
+  };
+
+  const handleToggleCardCompletion = async (card, columnId, completed) => {
+    if (!board || !card?.id || !columnId) return;
+    try {
+      const updated = await boardApi.setCardCompletion(board.id, columnId, card.id, completed);
+      setColumns((prev) =>
+        prev.map((col) => ({
+          ...col,
+          cards: (col.cards || []).map((item) =>
+            item.id === card.id ? { ...item, ...(updated || {}) } : item
+          ),
+        }))
+      );
+      if (cardDetails?.id === card.id) {
+        setCardDetails((prev) => ({ ...(prev || {}), ...(updated || {}) }));
+      }
+    } catch (error) {
+      console.error('Error updating card completion:', error);
+    }
+  };
+
+  const handleColumnDragStart = (columnId) => {
+    setDragColumnId(columnId);
+  };
+
+  const handleColumnDragEnd = () => {
+    setDragColumnId('');
+    setColumnDropTargetId('');
+  };
+
+  const handleColumnDragOver = (event, columnId) => {
+    if (!dragColumnId) return;
+    event.preventDefault();
+    setColumnDropTargetId(columnId);
+  };
+
+  const handleColumnDrop = async (event, targetColumnId) => {
+    event.preventDefault();
+    if (!dragColumnId || dragColumnId === targetColumnId || !board) {
+      setDragColumnId('');
+      setColumnDropTargetId('');
+      return;
+    }
+
+    const previous = columns;
+    const sourceIndex = previous.findIndex((col) => col.id === dragColumnId);
+    const targetIndex = previous.findIndex((col) => col.id === targetColumnId);
+    if (sourceIndex === -1 || targetIndex === -1) {
+      setDragColumnId('');
+      setColumnDropTargetId('');
+      return;
+    }
+
+    const next = [...previous];
+    const [moved] = next.splice(sourceIndex, 1);
+    next.splice(targetIndex, 0, moved);
+    setColumns(next);
+    setDragColumnId('');
+    setColumnDropTargetId('');
+
+    try {
+      await boardApi.reorderColumns(board.id, next.map((col) => col.id));
+    } catch (error) {
+      console.error('Error reordering columns:', error);
+      setColumns(previous);
+    }
+  };
+
+  const handleCardDragStart = (card, fromColumnId) => {
+    if (!card?.id || !fromColumnId) return;
+    setDragCard({ cardId: card.id, fromColumnId });
+  };
+
+  const handleCardDragEnd = () => {
+    setDragCard(null);
+    setCardDropTargetId('');
+  };
+
+  const handleCardDragOver = (event, targetColumnId) => {
+    if (!dragCard?.cardId) return;
+    event.preventDefault();
+    setCardDropTargetId(targetColumnId);
+  };
+
+  const handleCardDrop = async (targetColumnId, targetIndex) => {
+    if (!dragCard?.cardId || !dragCard?.fromColumnId || !targetColumnId) {
+      setDragCard(null);
+      setCardDropTargetId('');
+      return;
+    }
+
+    const { cardId, fromColumnId } = dragCard;
+    setDragCard(null);
+    setCardDropTargetId('');
+    let nextIndex = Number.isInteger(targetIndex) ? targetIndex : undefined;
+
+    if (fromColumnId === targetColumnId && Number.isInteger(nextIndex)) {
+      const sourceCards = columns.find((col) => col.id === fromColumnId)?.cards || [];
+      const fromIndex = sourceCards.findIndex((card) => card.id === cardId);
+      if (fromIndex === -1) return;
+      const maxIndex = sourceCards.length - 1;
+      const boundedIndex = Math.max(0, Math.min(nextIndex, maxIndex + 1));
+      const normalizedIndex = fromIndex < boundedIndex ? boundedIndex - 1 : boundedIndex;
+      if (normalizedIndex === fromIndex) return;
+      nextIndex = normalizedIndex;
+    }
+
+    await handleMoveCard(cardId, fromColumnId, targetColumnId, nextIndex);
   };
 
   if (loading) {
@@ -330,10 +556,24 @@ function ScreensPage({ boards = [], onBoardsChange, boardsLoading = false }) {
               onEditCard={handleEditCard}
               onViewCard={(card) => setCardDetails(card)}
               onDeleteCard={requestDeleteCard}
-              onMoveCard={handleMoveCard}
               onMoveButtonClick={handleMoveButtonClick}
+              currentUserId={currentUserId}
+              canManage={canManage}
+              onToggleCardCompletion={handleToggleCardCompletion}
+              onColumnDragStart={handleColumnDragStart}
+              onColumnDragEnd={handleColumnDragEnd}
+              onColumnDragOver={handleColumnDragOver}
+              onColumnDrop={handleColumnDrop}
+              isColumnDragTarget={columnDropTargetId === column.id}
+              onCardDragStart={handleCardDragStart}
+              onCardDragEnd={handleCardDragEnd}
+              onCardDragOver={handleCardDragOver}
+              onCardDrop={handleCardDrop}
+              isCardDropTarget={cardDropTargetId === column.id}
+              dragCard={dragCard}
               allColumns={columns}
-              priorityFilter={priorityFilter}
+              priorityFilter="all"
+              cardFilterFn={matchesCardFilters}
             />
           ))}
           <button
@@ -354,8 +594,10 @@ function ScreensPage({ boards = [], onBoardsChange, boardsLoading = false }) {
       <FiltersModal
         isOpen={isFiltersModalOpen}
         onClose={() => setIsFiltersModalOpen(false)}
-        selectedPriority={priorityFilter}
-        onPriorityChange={setPriorityFilter}
+        advanced
+        filters={cardFilters}
+        assigneeOptions={assigneeOptions}
+        onApplyFilters={setCardFilters}
       />
       <AddColumnModal
         isOpen={isAddColumnModalOpen}

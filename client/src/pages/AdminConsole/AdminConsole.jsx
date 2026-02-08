@@ -747,8 +747,13 @@ const AdminConsole = () => {
                 </div>
               </div>
               <div className={styles.modalHeaderRight}>
-                <button className={styles.btnGhost} onClick={() => setEditingUserId(null)}>
-                  Close
+                <button
+                  className={`${styles.btnGhost} ${styles.closeIconBtn}`}
+                  type="button"
+                  onClick={() => setEditingUserId(null)}
+                  aria-label="Close user details modal"
+                >
+                  &times;
                 </button>
               </div>
             </div>
@@ -898,8 +903,13 @@ const AdminConsole = () => {
                   Add a new user with optional avatar.
                 </div>
               </div>
-              <button className={styles.btnGhost} onClick={() => setEditingUserId(null)}>
-                Close
+              <button
+                className={`${styles.btnGhost} ${styles.closeIconBtn}`}
+                type="button"
+                onClick={() => setEditingUserId(null)}
+                aria-label="Close create user modal"
+              >
+                &times;
               </button>
             </div>
             <form onSubmit={handleCreateUser}>
@@ -1006,7 +1016,7 @@ const AdminConsole = () => {
           roleChangeWarning?.name || 'This user'
         } is a team lead in one or more teams, so their role cannot be changed.`}
         confirmLabel="OK"
-        cancelLabel="Close"
+        cancelLabel="×"
         onCancel={() => setRoleChangeWarning(null)}
         onConfirm={() => setRoleChangeWarning(null)}
       />
@@ -1124,8 +1134,13 @@ const AdminConsole = () => {
                   {teamModal.mode === 'create' ? 'Create Team' : 'Team details'}
                 </div>
               </div>
-                <button className={styles.btnGhost} onClick={() => setTeamModal(null)}>
-                  Close
+                <button
+                  className={`${styles.btnGhost} ${styles.closeIconBtn}`}
+                  type="button"
+                  onClick={() => setTeamModal(null)}
+                  aria-label="Close team modal"
+                >
+                  &times;
                 </button>
               </div>
 
@@ -1461,8 +1476,13 @@ const AdminConsole = () => {
                   {projectModal.id ? 'Project details' : 'Create Project'}
                 </div>
               </div>
-              <button className={styles.btnGhost} onClick={() => setProjectModal(null)}>
-                Close
+              <button
+                className={`${styles.btnGhost} ${styles.closeIconBtn}`}
+                type="button"
+                onClick={() => setProjectModal(null)}
+                aria-label="Close project modal"
+              >
+                &times;
               </button>
             </div>
             <div className={styles.modalGrid}>
@@ -1747,8 +1767,13 @@ const AdminConsole = () => {
                   Update admin name, email, password, and avatar.
                 </div>
               </div>
-              <button className={styles.btnGhost} onClick={() => setIsAdminProfileOpen(false)}>
-                Close
+              <button
+                className={`${styles.btnGhost} ${styles.closeIconBtn}`}
+                type="button"
+                onClick={() => setIsAdminProfileOpen(false)}
+                aria-label="Close admin profile modal"
+              >
+                &times;
               </button>
             </div>
             <div className={styles.modalGrid}>

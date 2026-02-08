@@ -79,6 +79,12 @@ export const boardApi = {
       body: JSON.stringify(columnData),
     }),
 
+  reorderColumns: (boardId, columnIds) =>
+    request(`/boards/${boardId}/columns/reorder`, {
+      method: 'PATCH',
+      body: JSON.stringify({ columnIds }),
+    }),
+
   deleteColumn: (boardId, columnId) =>
     request(`/boards/${boardId}/columns/${columnId}`, {
       method: 'DELETE',
@@ -96,18 +102,25 @@ export const boardApi = {
       body: JSON.stringify(cardData),
     }),
 
+  setCardCompletion: (boardId, columnId, cardId, completed) =>
+    request(`/boards/${boardId}/columns/${columnId}/cards/${cardId}/completion`, {
+      method: 'PATCH',
+      body: JSON.stringify({ completed }),
+    }),
+
   deleteCard: (boardId, columnId, cardId) =>
     request(`/boards/${boardId}/columns/${columnId}/cards/${cardId}`, {
       method: 'DELETE',
     }),
 
-  moveCard: (boardId, fromColumnId, toColumnId, cardId) =>
+  moveCard: (boardId, fromColumnId, toColumnId, cardId, toIndex) =>
     request(`/boards/${boardId}/cards/move`, {
       method: 'PATCH',
       body: JSON.stringify({
         fromColumnId,
         toColumnId,
         cardId,
+        toIndex,
       }),
     }),
 };

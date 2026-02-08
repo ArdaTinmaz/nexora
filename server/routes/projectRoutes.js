@@ -19,10 +19,19 @@ router.get('/assigned', getAssignedProjects);
 router.get('/:projectId/board', companyBoardController.getCompanyBoard);
 router.patch('/:projectId/board', companyBoardController.updateBoardSettings);
 router.post('/:projectId/board/columns', companyBoardController.createColumn);
+router.patch('/:projectId/board/columns/reorder', companyBoardController.reorderColumns);
 router.patch('/:projectId/board/columns/:columnId', companyBoardController.updateColumn);
 router.delete('/:projectId/board/columns/:columnId', companyBoardController.deleteColumn);
 router.post('/:projectId/board/columns/:columnId/cards', companyBoardController.createCard);
 router.patch('/:projectId/board/columns/:columnId/cards/:cardId', companyBoardController.updateCard);
+router.patch(
+  '/:projectId/board/columns/:columnId/cards/:cardId/completion',
+  companyBoardController.setCardCompletion
+);
+router.patch(
+  '/:projectId/board/columns/:columnId/cards/:cardId/claim',
+  companyBoardController.setCardOwnership
+);
 router.delete('/:projectId/board/columns/:columnId/cards/:cardId', companyBoardController.deleteCard);
 router.patch('/:projectId/board/cards/move', companyBoardController.moveCard);
 
