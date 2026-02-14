@@ -61,6 +61,7 @@ exports.getTeamMembers = async (req, res, next) => {
         name: user.name || user.email || entry.userId,
         email: user.email || '',
         role: entry.role,
+        avatarURL: user.avatarURL || '',
       };
     });
 

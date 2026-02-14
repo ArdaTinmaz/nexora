@@ -47,3 +47,8 @@ server/.env
 # Logs and temp from React
 *.swp
 *.swo
+client/public/images/TaskProDesktop/Desktop1.jpg
+client/public/images/TaskProDesktop/
+
+# Ignore generated / heavy images
+client/public/images/

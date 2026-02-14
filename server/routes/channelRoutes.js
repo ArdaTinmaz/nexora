@@ -3,8 +3,14 @@ const authMiddleware = require('../middleware/authMiddleware');
 const {
   getChannels,
   createChannel,
+  updateChannel,
+  deleteChannel,
   getMessages,
   sendMessage,
+  updateMessage,
+  deleteMessage,
+  pinMessage,
+  unpinMessage,
   listInvites,
   inviteUser,
   acceptInvite,
@@ -19,7 +25,13 @@ router.post('/', createChannel);
 router.get('/invites', listInvites);
 router.post('/:channelId/invite', inviteUser);
 router.post('/:channelId/accept', acceptInvite);
+router.patch('/:channelId', updateChannel);
+router.delete('/:channelId', deleteChannel);
+router.post('/:channelId/pin/:messageId', pinMessage);
+router.delete('/:channelId/pin', unpinMessage);
 router.get('/:channelId/messages', getMessages);
 router.post('/:channelId/messages', sendMessage);
+router.patch('/:channelId/messages/:messageId', updateMessage);
+router.delete('/:channelId/messages/:messageId', deleteMessage);
 
 module.exports = router;

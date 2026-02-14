@@ -15,6 +15,9 @@ const channelSchema = new Schema({
   teamId: { type: Schema.Types.ObjectId, ref: 'Team', required: true, index: true },
   createdBy: { type: Schema.Types.ObjectId, ref: 'User', required: true },
   members: { type: [channelMemberSchema], default: [] },
+  pinnedMessageId: { type: Schema.Types.ObjectId, ref: 'ChannelMessage', default: null },
+  pinnedBy: { type: Schema.Types.ObjectId, ref: 'User', default: null },
+  pinnedAt: { type: Number, default: null },
   createdAt: { type: Number, default: Date.now },
 });
 

@@ -7,6 +7,9 @@ const channelMessageSchema = new Schema({
   senderId: { type: Schema.Types.ObjectId, ref: 'User', required: true },
   message: { type: String, required: true },
   createdAt: { type: Number, default: Date.now },
+  updatedAt: { type: Number, default: Date.now },
+  isDeleted: { type: Boolean, default: false },
+  deletedAt: { type: Number, default: null },
 });
 
 module.exports = mongoose.model('ChannelMessage', channelMessageSchema);

@@ -1,8 +1,14 @@
 const {
   listChannelsForUser,
   createChannel,
+  updateChannel: updateChannelService,
+  deleteChannel: deleteChannelService,
   getChannelMessages,
   saveChannelMessage,
+  updateChannelMessage,
+  deleteChannelMessage,
+  pinChannelMessage,
+  unpinChannelMessage,
   createInvite,
   listInvitesForUser,
   acceptInvite,
@@ -32,6 +38,51 @@ exports.createChannel = async (req, res, next) => {
     }
 
     res.status(201).json(channel);
+  } catch (error) {
+    next(error);
+  }
+};
+
+exports.updateChannel = async (req, res, next) => {
+  try {
+    const { channelId } = req.params;
+    const { name } = req.body;
+    if (!name || !name.trim()) {
+      return res.status(400).json({ message: 'Kanal adı zorunlu' });
+    }
+
+    const updated = await updateChannelService({
+      channelId,
+      name: name.trim(),
+      userId: req.user.id,
+    });
+
+    const io = req.app.get('io');
+    if (io) {
+      io.to(`team:${updated.teamId}`).emit('channelUpdated', updated);
+    }
+
+    res.json(updated);
+  } catch (error) {
+    next(error);
+  }
+};
+
+exports.deleteChannel = async (req, res, next) => {
+  try {
+    const { channelId } = req.params;
+    const deleted = await deleteChannelService({
+      channelId,
+      userId: req.user.id,
+    });
+
+    const io = req.app.get('io');
+    if (io) {
+      io.to(`team:${deleted.teamId}`).emit('channelDeleted', { id: deleted.id, teamId: deleted.teamId });
+      io.to(`channel:${deleted.id}`).emit('channelDeleted', { id: deleted.id, teamId: deleted.teamId });
+    }
+
+    res.json({ id: deleted.id, teamId: deleted.teamId, name: deleted.name });
   } catch (error) {
     next(error);
   }
@@ -68,6 +119,91 @@ exports.sendMessage = async (req, res, next) => {
     }
 
     res.status(201).json(saved);
+  } catch (error) {
+    next(error);
+  }
+};
+
+exports.updateMessage = async (req, res, next) => {
+  try {
+    const { channelId, messageId } = req.params;
+    const { message } = req.body;
+    if (!message || !message.trim()) {
+      return res.status(400).json({ message: 'Mesaj zorunlu' });
+    }
+
+    const updated = await updateChannelMessage({
+      channelId,
+      messageId,
+      userId: req.user.id,
+      message: message.trim(),
+    });
+
+    const io = req.app.get('io');
+    if (io) {
+      io.to(`channel:${channelId}`).emit('channelMessageUpdated', updated);
+    }
+
+    res.json(updated);
+  } catch (error) {
+    next(error);
+  }
+};
+
+exports.deleteMessage = async (req, res, next) => {
+  try {
+    const { channelId, messageId } = req.params;
+    const deleted = await deleteChannelMessage({
+      channelId,
+      messageId,
+      userId: req.user.id,
+    });
+
+    const io = req.app.get('io');
+    if (io) {
+      io.to(`channel:${channelId}`).emit('channelMessageDeleted', deleted);
+    }
+
+    res.json(deleted);
+  } catch (error) {
+    next(error);
+  }
+};
+
+exports.pinMessage = async (req, res, next) => {
+  try {
+    const { channelId, messageId } = req.params;
+    const updatedChannel = await pinChannelMessage({
+      channelId,
+      messageId,
+      userId: req.user.id,
+    });
+
+    const io = req.app.get('io');
+    if (io) {
+      io.to(`team:${updatedChannel.teamId}`).emit('channelUpdated', updatedChannel);
+    }
+
+    res.json(updatedChannel);
+  } catch (error) {
+    next(error);
+  }
+};
+
+exports.unpinMessage = async (req, res, next) => {
+  try {
+    const { channelId } = req.params;
+    const updatedChannel = await unpinChannelMessage({
+      channelId,
+      userId: req.user.id,
+    });
+
+    const io = req.app.get('io');
+    if (io) {
+      io.to(`team:${updatedChannel.teamId}`).emit('channelUpdated', updatedChannel);
+    }
+
+    res.json(updatedChannel);
   } catch (error) {
     next(error);
   }

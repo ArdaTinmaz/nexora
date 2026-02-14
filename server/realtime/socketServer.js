@@ -15,6 +15,8 @@ const {
   acceptInvite,
   ensureChannelMember,
   saveChannelMessage,
+  updateChannelMessage,
+  deleteChannelMessage,
 } = require('../services/channelService');
 
 const getAllowedOrigins = () => {
@@ -180,6 +182,37 @@ const startSocketServer = async () => {
         const saved = await saveChannelMessage({ channelId, userId, message });
         io.to(`channel:${channelId}`).emit('receiveChannelMessage', saved);
         callback({ ok: true, message: saved });
+      } catch (err) {
+        callback({ error: err.message });
+      }
+    });
+
+    socket.on(
+      'updateChannelMessage',
+      async ({ channelId, messageId, message }, callback = () => {}) => {
+        try {
+          if (!message || !message.trim()) {
+            return callback({ error: 'Message is required' });
+          }
+          const updated = await updateChannelMessage({
+            channelId,
+            messageId,
+            userId,
+            message: message.trim(),
+          });
+          io.to(`channel:${channelId}`).emit('channelMessageUpdated', updated);
+          callback({ ok: true, message: updated });
+        } catch (err) {
+          callback({ error: err.message });
+        }
+      }
+    );
+
+    socket.on('deleteChannelMessage', async ({ channelId, messageId }, callback = () => {}) => {
+      try {
+        const deleted = await deleteChannelMessage({ channelId, messageId, userId });
+        io.to(`channel:${channelId}`).emit('channelMessageDeleted', deleted);
+        callback({ ok: true, message: deleted });
       } catch (err) {
         callback({ error: err.message });
       }

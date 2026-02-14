@@ -32,6 +32,13 @@ function AuthPage() {
           >
             Log In
           </button>
+          <button
+            className={styles.authTab}
+            onClick={() => navigate('/admin/login')}
+            type="button"
+          >
+            Admin
+          </button>
         </div>
 
         {/* Form */}
