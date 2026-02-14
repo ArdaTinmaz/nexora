@@ -52,3 +52,7 @@ client/public/images/TaskProDesktop/
 
 # Ignore generated / heavy images
 client/public/images/
+
+server/.env
+.env
+
