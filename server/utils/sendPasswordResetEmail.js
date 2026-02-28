@@ -49,7 +49,33 @@ const getTransactionalClient = () => {
   return transactionalClient;
 };
 
-const buildEmailPayload = ({ to, name, resetURL }) => {
+const LINK_SCHEME_RE = /^[a-z][a-z0-9+.-]*:/i;
+
+const escapeHtml = (value) =>
+  String(value || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+
+const isLinkTarget = (value) => LINK_SCHEME_RE.test(String(value || ''));
+
+const buildHtmlSection = (label, value) => {
+  if (!value) {
+    return '';
+  }
+
+  const safeLabel = escapeHtml(label);
+  const safeValue = escapeHtml(value);
+
+  if (isLinkTarget(value)) {
+    return `<p>${safeLabel}: <a href="${safeValue}">${safeValue}</a></p>`;
+  }
+
+  return `<p>${safeLabel}: <strong>${safeValue}</strong></p>`;
+};
+
+const buildEmailPayload = ({ to, name, resetToken, resetURL, loginURL }) => {
   const sdk = loadSdk();
   const senderName = process.env.BREVO_SENDER_NAME || 'Nexora';
   const sendSmtpEmail = new sdk.SendSmtpEmail();
@@ -63,26 +89,44 @@ const buildEmailPayload = ({ to, name, resetURL }) => {
   sendSmtpEmail.subject = 'Nexora - Password reset instructions';
   sendSmtpEmail.htmlContent = `
     <p>Hello ${name || 'Nexora user'},</p>
-    <p>To reset your password, click the link below:</p>
-    <p><a href="${resetURL}" target="_blank">${resetURL}</a></p>
+    <p>Use this one-time reset token in the Nexora app:</p>
+    <p><strong>${resetToken}</strong></p>
+    ${buildHtmlSection('Reset link', resetURL)}
+    ${buildHtmlSection('Login link', loginURL)}
     <p>This link is valid for 1 hour. If you did not request this, please ignore this email.</p>
     <p>Nexora Team</p>
   `;
-  sendSmtpEmail.textContent = `Hello ${name || 'Nexora user'}, to reset your password, use this link: ${resetURL}`;
+  sendSmtpEmail.textContent =
+    `Hello ${name || 'Nexora user'}, use this one-time reset token in the Nexora app: ${resetToken}. ` +
+    (resetURL ? `Reset link: ${resetURL}. ` : '') +
+    (loginURL ? `Login link: ${loginURL}.` : '');
 
   return sendSmtpEmail;
 };
 
-const sendPasswordResetEmail = async ({ to, name, resetURL }) => {
+const sendPasswordResetEmail = async ({ to, name, resetToken, resetURL, loginURL }) => {
   const apiInstance = getTransactionalClient();
-  const payload = buildEmailPayload({ to, name, resetURL });
+  const payload = buildEmailPayload({ to, name, resetToken, resetURL, loginURL });
 
   try {
     await apiInstance.sendTransacEmail(payload);
   } catch (error) {
+    const status = error?.status || error?.statusCode || error?.response?.status;
+    const rawMessage =
+      error?.response?.text ||
+      error?.response?.body?.message ||
+      error?.message ||
+      'Şifre sıfırlama e-postası gönderilemedi';
+    const normalized = String(rawMessage).toLowerCase();
+    const wrappedError = new Error(
+      normalized.includes('unauthorized')
+        ? 'Email service authorization failed. Check BREVO_API_KEY and verify BREVO_SENDER_EMAIL in Brevo.'
+        : rawMessage
+    );
+    wrappedError.statusCode = status && Number.isFinite(status) ? status : 500;
     // eslint-disable-next-line no-console
     console.error('Brevo e-posta gönderim hatası:', error?.response?.text || error.message);
-    throw error;
+    throw wrappedError;
   }
 };
 

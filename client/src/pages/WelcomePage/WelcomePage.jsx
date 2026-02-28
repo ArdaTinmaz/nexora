@@ -1,6 +1,7 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import styles from './WelcomePage.module.css';
+import { assetUrl, spriteHref } from '../../utils/assets';
 
 function WelcomePage() {
   const navigate = useNavigate();
@@ -11,7 +12,7 @@ function WelcomePage() {
         {/* Illustration */}
         <div className={styles.illustration}>
           <img 
-            src={`${process.env.PUBLIC_URL}/images/TaskProDesktop/welcomePageImage.png`}
+            src={assetUrl('images/TaskProDesktop/welcomePageImage.png')}
             alt="Person with laptop" 
             className={styles.illustrationImage}
           />
@@ -20,7 +21,7 @@ function WelcomePage() {
         {/* Nexora Logo */}
         <div className={styles.logoContainer}>
           <svg className={styles.lightningIcon} width="48" height="48" viewBox="0 0 32 32">
-            <use href="/sprites.svg#icon-icon"></use>
+            <use href={spriteHref('icon-icon')}></use>
           </svg>
           <span className={styles.logoText}>Nexora</span>
         </div>

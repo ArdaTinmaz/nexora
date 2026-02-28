@@ -1,40 +1,7 @@
-import { API_BASE_URL } from '../config';
+import { getSessionSync, setSession, clearSession } from '../desktop/session';
+import { request } from './httpClient';
 
-const ADMIN_STORAGE_KEY = 'adminAuthToken';
-
-export const getAdminToken = () => {
-  try {
-    const stored = localStorage.getItem(ADMIN_STORAGE_KEY);
-    if (!stored) return null;
-    const parsed = JSON.parse(stored);
-    return parsed?.token || null;
-  } catch {
-    return null;
-  }
-};
-
-const authHeaders = () => {
-  const token = getAdminToken();
-  return token ? { Authorization: `Bearer ${token}` } : {};
-};
-
-const request = async (path, options = {}) => {
-  const { skipAuth, ...rest } = options || {};
-  const response = await fetch(`${API_BASE_URL}${path}`, {
-    ...rest,
-    headers: {
-      'Content-Type': 'application/json',
-      ...(skipAuth ? {} : authHeaders()),
-      ...(rest.headers || {}),
-    },
-  });
-  const data = await response.json().catch(() => ({}));
-  if (!response.ok) {
-    const message = data?.message || 'Request failed';
-    throw new Error(message);
-  }
-  return data;
-};
+export const getAdminToken = () => getSessionSync('admin')?.token || null;
 
 export const adminApi = {
   login: async ({ username, password }) => {
@@ -42,9 +9,9 @@ export const adminApi = {
       method: 'POST',
       body: JSON.stringify({ username, password }),
       headers: {},
-      skipAuth: true,
+      authScope: 'none',
     });
-    localStorage.setItem(ADMIN_STORAGE_KEY, JSON.stringify({ token: res.token, username: res.username }));
+    await setSession('admin', { token: res.token, username: res.username });
     return res;
   },
   forgotAdminPassword: (payload) =>
@@ -52,87 +19,98 @@ export const adminApi = {
       method: 'POST',
       body: JSON.stringify(payload),
       headers: {},
-      skipAuth: true,
+      authScope: 'none',
     }),
   verifyAdminResetCode: (payload) =>
     request('/admin/forgot-password/verify', {
       method: 'POST',
       body: JSON.stringify(payload),
       headers: {},
-      skipAuth: true,
+      authScope: 'none',
     }),
   resetAdminPassword: (payload) =>
     request('/admin/forgot-password/reset', {
       method: 'POST',
       body: JSON.stringify(payload),
       headers: {},
-      skipAuth: true,
+      authScope: 'none',
     }),
-  logout: () => {
-    localStorage.removeItem(ADMIN_STORAGE_KEY);
-  },
-  users: () => request('/admin/users'),
+  logout: () => clearSession('admin'),
+  users: () => request('/admin/users', { authScope: 'admin' }),
   updateUserMeta: (userId, payload) =>
     request(`/admin/users/${userId}/meta`, {
       method: 'POST',
       body: JSON.stringify(payload),
+      authScope: 'admin',
     }),
-  teams: () => request('/admin/teams'),
+  teams: () => request('/admin/teams', { authScope: 'admin' }),
   createTeam: (payload) =>
     request('/admin/teams', {
       method: 'POST',
       body: JSON.stringify(payload),
+      authScope: 'admin',
     }),
   updateTeam: (teamId, payload) =>
     request(`/admin/teams/${teamId}`, {
       method: 'PATCH',
       body: JSON.stringify(payload),
+      authScope: 'admin',
     }),
   addTeamMember: (teamId, payload) =>
     request(`/admin/teams/${teamId}/members`, {
       method: 'POST',
       body: JSON.stringify(payload),
+      authScope: 'admin',
     }),
   removeTeamMember: (teamId, userId) =>
     request(`/admin/teams/${teamId}/members/${userId}`, {
       method: 'DELETE',
+      authScope: 'admin',
     }),
   deleteTeam: (teamId) =>
     request(`/admin/teams/${teamId}`, {
       method: 'DELETE',
+      authScope: 'admin',
     }),
-  projects: () => request('/admin/projects'),
+  projects: () => request('/admin/projects', { authScope: 'admin' }),
   createProject: (payload) =>
     request('/admin/projects', {
       method: 'POST',
       body: JSON.stringify(payload),
+      authScope: 'admin',
     }),
   updateProject: (projectId, payload) =>
     request(`/admin/projects/${projectId}`, {
       method: 'PATCH',
       body: JSON.stringify(payload),
+      authScope: 'admin',
     }),
   updateTeamProject: (projectId, teamId) =>
     request(`/admin/projects/${projectId}/teams/${teamId}`, {
       method: 'POST',
+      authScope: 'admin',
     }),
   removeTeamFromProject: (projectId, teamId) =>
     request(`/admin/projects/${projectId}/teams/${teamId}/remove`, {
       method: 'POST',
+      authScope: 'admin',
     }),
   deleteProject: (projectId) =>
     request(`/admin/projects/${projectId}`, {
       method: 'DELETE',
+      authScope: 'admin',
     }),
-  adminProfile: () => request('/admin/profile'),
+  adminProfile: () => request('/admin/profile', { authScope: 'admin' }),
   updateAdminProfile: (payload) =>
     request('/admin/profile', {
       method: 'PATCH',
       body: JSON.stringify(payload),
+      authScope: 'admin',
     }),
   createUser: (payload) =>
     request('/auth/register', {
       method: 'POST',
       body: JSON.stringify(payload),
+      authScope: 'admin',
     }),
 };

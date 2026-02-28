@@ -114,6 +114,15 @@ const AdminLogin = () => {
   return (
     <div className={styles.page}>
       <div className={styles.card}>
+        <div className={styles.headerRow}>
+          <button
+            type="button"
+            className={styles.backButton}
+            onClick={() => navigate('/welcome')}
+          >
+            Back
+          </button>
+        </div>
         <div className={styles.brand}>NEXORA Admin</div>
         <h1 className={styles.title}>Admin Login</h1>
 

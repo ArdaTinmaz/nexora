@@ -1,17 +1,16 @@
-const path = require('path');
-const fs = require('fs');
 const crypto = require('crypto');
 const bcrypt = require('bcryptjs');
 const validator = require('validator');
 const UserModel = require('../models/User');
 const sendEmailVerificationCode = require('../utils/sendEmailVerificationCode');
+const normalizeAvatarUrl = require('../utils/normalizeAvatarUrl');
 
 const buildUserResponse = (userDoc) => ({
   id: userDoc.id,
   name: userDoc.name,
   email: userDoc.email,
   role: userDoc.role || 'developer',
-  avatarURL: userDoc.avatarURL,
+  avatarURL: normalizeAvatarUrl(userDoc.avatarURL),
   theme: userDoc.theme,
 });
 
@@ -24,13 +23,6 @@ const normalizeEmail = (email) =>
     icloud_remove_subaddress: false,
   }) || email.toLowerCase();
 
-const ensureUploadsDir = () => {
-  const uploadPath = path.join(__dirname, '..', 'uploads');
-  if (!fs.existsSync(uploadPath)) {
-    fs.mkdirSync(uploadPath, { recursive: true });
-  }
-};
-
 exports.getProfile = async (req, res, next) => {
   try {
     const user = await UserModel.findUserById(req.user.id);
@@ -42,7 +34,7 @@ exports.getProfile = async (req, res, next) => {
 
 exports.updateProfile = async (req, res, next) => {
   try {
-    const { name, password } = req.body;
+    const { name, password, avatarURL } = req.body;
     const updates = {};
 
     if (name && name.trim()) {
@@ -59,9 +51,8 @@ exports.updateProfile = async (req, res, next) => {
       updates.password = await bcrypt.hash(password, 10);
     }
 
-    if (req.file) {
-      ensureUploadsDir();
-      updates.avatarURL = `/uploads/${req.file.filename}`;
+    if (typeof avatarURL === 'string') {
+      updates.avatarURL = avatarURL.trim();
     }
 
     const updatedUser = await UserModel.updateUserFields(req.user.id, updates);

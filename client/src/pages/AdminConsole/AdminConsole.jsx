@@ -3,6 +3,7 @@ import { Navigate, useNavigate } from 'react-router-dom';
 import styles from './AdminConsole.module.css';
 import { adminApi, getAdminToken } from '../../api/adminApi';
 import ConfirmModal from '../../components/ConfirmModal/ConfirmModal';
+import { API_ORIGIN } from '../../config';
 
 // UI-focused Admin Console wired to backend; no mock data kept.
 const AdminConsole = () => {
@@ -110,15 +111,18 @@ const AdminConsole = () => {
     return assignedTeamByUserId.get(String(editingUserId)) || null;
   }, [assignedTeamByUserId, editingUserId]);
 
-  const getBackendOrigin = () => {
-    const apiBase = process.env.REACT_APP_API_URL || 'http://localhost:5001/api';
-    return apiBase.replace(/\/api$/, '');
-  };
-
   const getAvatarSrc = (user) => {
     if (!user?.avatarURL) return null;
-    if (user.avatarURL.startsWith('http')) return user.avatarURL;
-    return `${getBackendOrigin()}${user.avatarURL}`;
+    if (/^(?:https?:|data:|blob:|file:)/i.test(user.avatarURL)) {
+      return user.avatarURL;
+    }
+    if (user.avatarURL.startsWith('/')) {
+      return `${API_ORIGIN}${user.avatarURL}`;
+    }
+    if (user.avatarURL.startsWith('uploads/')) {
+      return `${API_ORIGIN}/${user.avatarURL}`;
+    }
+    return `${API_ORIGIN}/uploads/${user.avatarURL}`;
   };
 
   const normalizeStatus = (status) =>

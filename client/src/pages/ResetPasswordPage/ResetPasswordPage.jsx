@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { API_BASE_URL } from '../../config';
 import styles from './ResetPasswordPage.module.css';
+import { authApi } from '../../api/authApi';
 
 function ResetPasswordPage() {
   const [searchParams] = useSearchParams();
@@ -59,32 +59,17 @@ function ResetPasswordPage() {
     setIsSubmitting(true);
 
     try {
-      const response = await fetch(`${API_BASE_URL}/auth/reset-password`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ token, password }),
+      await authApi.resetPassword({ token, password });
+      setStatus({
+        type: 'success',
+        message: 'Your password has been updated. Redirecting to the login screen...',
       });
-
-      const result = await response
-        .json()
-        .catch(() => ({}));
-
-      if (!response.ok) {
-        const errorMessage =
-          result?.message || 'Password could not be reset. Please try again.';
-        setStatus({ type: 'error', message: errorMessage });
-      } else {
-        setStatus({
-          type: 'success',
-          message: 'Your password has been updated. Redirecting to the login screen...',
-        });
-        setTimeout(() => navigate('/auth/login'), 2000);
-      }
+      setTimeout(() => navigate('/auth/login'), 2000);
     } catch (error) {
       console.error('Reset password error:', error);
       setStatus({
         type: 'error',
-        message: 'Unable to reach the server. Please try again.',
+        message: error.message || 'Unable to reach the server. Please try again.',
       });
     } finally {
       setIsSubmitting(false);

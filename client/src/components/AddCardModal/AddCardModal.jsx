@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import styles from './AddCardModal.module.css';
+import { spriteHref } from '../../utils/assets';
 
 const priorities = [
   { id: 'without', label: 'Without priority', color: '#808080' },
@@ -157,7 +158,7 @@ function AddCardModal({ isOpen, onClose, onCreate }) {
           <button type="submit" className={styles.submitBtn}>
             <div className={styles.plusIconContainer}>
               <svg className={styles.plusIcon} width="20" height="20" viewBox="0 0 32 32">
-                <use href="/sprites.svg#icon-plus"></use>
+                <use href={spriteHref('icon-plus')}></use>
               </svg>
             </div>
             <span className={styles.submitText}>Add</span>

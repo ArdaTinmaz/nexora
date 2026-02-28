@@ -1,5 +1,6 @@
 import React, { useEffect } from 'react';
 import styles from './MoveCardModal.module.css';
+import { spriteHref } from '../../utils/assets';
 
 function MoveCardModal({ isOpen, onClose, onMove, columns, currentColumnId, cardTitle }) {
   useEffect(() => {
@@ -68,7 +69,7 @@ function MoveCardModal({ isOpen, onClose, onMove, columns, currentColumnId, card
                   <span className={styles.columnButtonText}>{column.title}</span>
                   <span className={styles.columnButtonArrow}>
                     <svg width="16" height="16" viewBox="0 0 32 32">
-                      <use href="/sprites.svg#icon-arrow-circle-broken-right"></use>
+                      <use href={spriteHref('icon-arrow-circle-broken-right')}></use>
                     </svg>
                   </span>
                 </button>

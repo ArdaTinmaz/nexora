@@ -6,6 +6,7 @@ import EditBoardModal from '../EditBoardModal/EditBoardModal';
 import NeedHelpModal from '../NeedHelpModal/NeedHelpModal';
 import { boardApi } from '../../api/boardApi';
 import ConfirmModal from '../ConfirmModal/ConfirmModal';
+import { spriteHref } from '../../utils/assets';
 
 const iconMap = {
   'project': 'icon-Project',
@@ -142,7 +143,7 @@ function Sidebar({
         {/* Logo */}
         <div className={styles.logoContainer}>
           <svg className={styles.logoIcon} width="32" height="32" viewBox="0 0 32 32">
-            <use href="/sprites.svg#icon-icon"></use>
+            <use href={spriteHref('icon-icon')}></use>
           </svg>
           <span className={styles.logoText}>Nexora</span>
         </div>
@@ -181,7 +182,7 @@ function Sidebar({
                         >
                           <div className={styles.boardIcon}>
                             <svg width="18" height="18" viewBox="0 0 32 32">
-                              <use href={`/sprites.svg#${project.iconName || iconMap[project.icon] || 'icon-Project'}`}></use>
+                              <use href={spriteHref(project.iconName || iconMap[project.icon] || 'icon-Project')}></use>
                             </svg>
                           </div>
                           <span className={styles.boardName}>{project.name}</span>
@@ -193,7 +194,7 @@ function Sidebar({
                                 onClick={(e) => handleEditCompanyProject(project, e)}
                               >
                                 <svg width="16" height="16" viewBox="0 0 32 32">
-                                  <use href="/sprites.svg#icon-pencil-01"></use>
+                                  <use href={spriteHref('icon-pencil-01')}></use>
                                 </svg>
                               </button>
                             </div>
@@ -230,7 +231,7 @@ function Sidebar({
                   <span className={styles.createBoardText}>Create a new board</span>
                   <div className={styles.plusIconContainer}>
                     <svg className={styles.plusIcon} width="20" height="20" viewBox="0 0 32 32">
-                      <use href="/sprites.svg#icon-big-plus"></use>
+                      <use href={spriteHref('icon-big-plus')}></use>
                     </svg>
                   </div>
                 </button>
@@ -249,7 +250,7 @@ function Sidebar({
                       >
                         <div className={styles.boardIcon}>
                           <svg width="18" height="18" viewBox="0 0 32 32">
-                            <use href={`/sprites.svg#${board.iconName || iconMap[board.icon] || 'icon-Project'}`}></use>
+                            <use href={spriteHref(board.iconName || iconMap[board.icon] || 'icon-Project')}></use>
                           </svg>
                         </div>
                         <span className={styles.boardName}>{board.name}</span>
@@ -260,7 +261,7 @@ function Sidebar({
                             onClick={(e) => handleEditBoard(board, e)}
                           >
                             <svg width="16" height="16" viewBox="0 0 32 32">
-                              <use href="/sprites.svg#icon-pencil-01"></use>
+                              <use href={spriteHref('icon-pencil-01')}></use>
                             </svg>
                           </button>
                           <button 
@@ -269,7 +270,7 @@ function Sidebar({
                             onClick={(e) => handleDeleteBoard(board.id, e)}
                           >
                             <svg width="16" height="16" viewBox="0 0 32 32">
-                              <use href="/sprites.svg#icon-trash-04"></use>
+                              <use href={spriteHref('icon-trash-04')}></use>
                             </svg>
                           </button>
                         </div>
@@ -291,7 +292,7 @@ function Sidebar({
             type="button"
           >
             <svg className={styles.logoutIcon} width="32" height="32" viewBox="0 0 32 32">
-              <use href="/sprites.svg#icon-login"></use>
+              <use href={spriteHref('icon-login')}></use>
             </svg>
             <span className={styles.logoutText}>Log out</span>
           </button>
@@ -302,7 +303,7 @@ function Sidebar({
             aria-label="Need help"
           >
             <svg className={styles.helpIconLarge} width="28" height="28" viewBox="0 0 32 32">
-              <use href="/sprites.svg#icon-help-circle"></use>
+              <use href={spriteHref('icon-help-circle')}></use>
             </svg>
           </button>
         </div>

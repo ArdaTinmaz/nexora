@@ -6,6 +6,7 @@ import { companyBoardApi } from '../../api/companyBoardApi';
 import ConfirmModal from '../../components/ConfirmModal/ConfirmModal';
 import EditTaskModal from '../../components/EditTaskModal/EditTaskModal';
 import TaskFiltersModal from '../../components/TaskFiltersModal/TaskFiltersModal';
+import { spriteHref } from '../../utils/assets';
 
 const priorityLabels = {
   without: 'Without priority',
@@ -553,7 +554,7 @@ function TasksPage({ companyProjects = [] }) {
             onClick={() => setIsTaskFiltersOpen(true)}
           >
             <svg className={styles.filterIcon} width="20" height="20" viewBox="0 0 32 32">
-              <use href="/sprites.svg#icon-Filter-White"></use>
+              <use href={spriteHref('icon-Filter-White')}></use>
             </svg>
             <span>Filters</span>
           </button>

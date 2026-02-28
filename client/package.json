@@ -2,6 +2,7 @@
   "name": "task-pro-client",
   "version": "0.1.0",
   "private": true,
+  "homepage": ".",
   "dependencies": {
     "@hookform/resolvers": "^3.3.2",
     "react": "^18.2.0",

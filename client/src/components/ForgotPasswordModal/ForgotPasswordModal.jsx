@@ -1,58 +1,101 @@
 import React, { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { API_BASE_URL } from '../../config';
 import styles from './ForgotPasswordModal.module.css';
+import { authApi } from '../../api/authApi';
 
 function ForgotPasswordModal({ isOpen, onClose }) {
   const [email, setEmail] = useState('');
+  const [step, setStep] = useState('request');
+  const [resetToken, setResetToken] = useState('');
+  const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
   const [status, setStatus] = useState({ type: '', message: '' });
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   useEffect(() => {
     if (!isOpen) {
       setEmail('');
+      setStep('request');
+      setResetToken('');
+      setPassword('');
+      setConfirmPassword('');
       setStatus({ type: '', message: '' });
       setIsSubmitting(false);
     }
   }, [isOpen]);
 
+  const getPasswordValidationError = (value) => {
+    if (!value) {
+      return '';
+    }
+
+    if (value.length < 8) {
+      return 'Password must be at least 8 characters.';
+    }
+
+    if (!/[A-Z]/.test(value)) {
+      return 'Password must include at least one uppercase letter.';
+    }
+
+    if (!/\d/.test(value)) {
+      return 'Password must include at least one number.';
+    }
+
+    return '';
+  };
+
   const handleSubmit = async (event) => {
     event.preventDefault();
     setStatus({ type: '', message: '' });
 
-    if (!email.trim()) {
-      setStatus({ type: 'error', message: 'Please enter your email address.' });
-      return;
-    }
-
     setIsSubmitting(true);
 
     try {
-      const response = await fetch(`${API_BASE_URL}/auth/forgot-password`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: email.trim() }),
-      });
+      if (step === 'request') {
+        if (!email.trim()) {
+          setStatus({ type: 'error', message: 'Please enter your email address.' });
+          return;
+        }
 
-      const result = await response
-        .json()
-        .catch(() => ({}));
-
-      if (!response.ok) {
-        const errorMessage =
-          result?.message || 'The reset email could not be sent. Please try again.';
-        setStatus({ type: 'error', message: errorMessage });
-      } else {
+        await authApi.forgotPassword({ email: email.trim() });
+        setStep('reset');
         setStatus({
           type: 'success',
-          message: 'If the email is registered, a reset link has been sent.',
+          message: 'Check your email for the reset token, then paste it below to set a new password.',
         });
+        return;
       }
+
+      if (!resetToken.trim()) {
+        setStatus({ type: 'error', message: 'Please enter the reset token from the email.' });
+        return;
+      }
+
+      const passwordError = getPasswordValidationError(password);
+      if (passwordError) {
+        setStatus({ type: 'error', message: passwordError });
+        return;
+      }
+
+      if (password !== confirmPassword) {
+        setStatus({ type: 'error', message: 'Passwords do not match.' });
+        return;
+      }
+
+      await authApi.resetPassword({ token: resetToken.trim(), password });
+      setStatus({
+        type: 'success',
+        message: 'Your password has been updated. You can now sign in.',
+      });
+      setStep('request');
+      setResetToken('');
+      setPassword('');
+      setConfirmPassword('');
     } catch (error) {
       console.error('Forgot password error:', error);
       setStatus({
         type: 'error',
-        message: 'Unable to reach the server. Please try again.',
+        message: error.message || 'Unable to reach the server. Please try again.',
       });
     } finally {
       setIsSubmitting(false);
@@ -76,22 +119,63 @@ function ForgotPasswordModal({ isOpen, onClose }) {
         </button>
         <h2 className={styles.title}>Password reset</h2>
         <p className={styles.subtitle}>
-          Enter your email address and we will send a reset link if an account exists.
+          {step === 'request'
+            ? 'Enter your email address and we will send a one-time reset token if an account exists.'
+            : 'Paste the token from the email and choose a new password.'}
         </p>
         <form onSubmit={handleSubmit} className={styles.form}>
-          <input
-            type="email"
-            className={styles.input}
-            placeholder="Your email address"
-            value={email}
-            onChange={(event) => setEmail(event.target.value)}
-          />
+          {step === 'request' ? (
+            <input
+              type="email"
+              className={styles.input}
+              placeholder="Your email address"
+              value={email}
+              onChange={(event) => setEmail(event.target.value)}
+            />
+          ) : (
+            <>
+              <input
+                type="text"
+                className={styles.input}
+                placeholder="Reset token"
+                value={resetToken}
+                onChange={(event) => setResetToken(event.target.value)}
+              />
+              <input
+                type="password"
+                className={styles.input}
+                placeholder="New password"
+                value={password}
+                onChange={(event) => setPassword(event.target.value)}
+              />
+              <input
+                type="password"
+                className={styles.input}
+                placeholder="Confirm new password"
+                value={confirmPassword}
+                onChange={(event) => setConfirmPassword(event.target.value)}
+              />
+              <button
+                type="button"
+                className={styles.secondaryButton}
+                onClick={() => {
+                  setStep('request');
+                  setResetToken('');
+                  setPassword('');
+                  setConfirmPassword('');
+                  setStatus({ type: '', message: '' });
+                }}
+              >
+                Back to email step
+              </button>
+            </>
+          )}
           <button
             type="submit"
             className={styles.submitButton}
             disabled={isSubmitting}
           >
-            {isSubmitting ? 'Sending...' : 'Send link'}
+            {isSubmitting ? 'Processing...' : step === 'request' ? 'Send token' : 'Update password'}
           </button>
           {status.message && (
             <div

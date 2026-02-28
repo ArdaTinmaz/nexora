@@ -18,6 +18,21 @@
   gap: 14px;
 }
 
+.headerRow {
+  display: flex;
+  justify-content: flex-start;
+}
+
+.backButton {
+  border: 1px solid #2f2f2f;
+  background: rgba(255, 255, 255, 0.04);
+  color: #d1d5db;
+  border-radius: 10px;
+  padding: 8px 12px;
+  cursor: pointer;
+  font-weight: 600;
+}
+
 .brand {
   font-weight: 700;
   letter-spacing: 0.06em;

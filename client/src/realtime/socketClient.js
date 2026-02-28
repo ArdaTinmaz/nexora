@@ -1,22 +1,17 @@
 import { io } from 'socket.io-client';
-import { AUTH_STORAGE_KEY } from '../config';
-
-const getToken = () => {
-  try {
-    const stored = localStorage.getItem(AUTH_STORAGE_KEY);
-    if (!stored) return null;
-    const parsed = JSON.parse(stored);
-    return parsed?.token || null;
-  } catch {
-    return null;
-  }
-};
+import { SOCKET_URL } from '../config';
+import { getTokenSync } from '../desktop/session';
+import { isDesktopApp } from '../desktop/bridge';
+import { acquireDesktopSocket } from '../desktop/realtimeSocket';
 
 export const createSocket = () => {
-  const token = getToken();
-  const url = process.env.REACT_APP_SOCKET_URL || 'http://localhost:5002';
+  if (isDesktopApp()) {
+    return acquireDesktopSocket();
+  }
 
-  return io(url, {
+  const token = getTokenSync('user');
+
+  return io(SOCKET_URL, {
     auth: { token },
     transports: ['websocket'],
   });

@@ -11,7 +11,8 @@ import Column from '../../components/Column/Column';
 import { boardApi } from '../../api/boardApi';
 import ConfirmModal from '../../components/ConfirmModal/ConfirmModal';
 import CardDetailsModal from '../../components/CardDetailsModal/CardDetailsModal';
-import { AUTH_STORAGE_KEY } from '../../config';
+import { getSession } from '../../desktop/session';
+import { backgroundImageStyle, spriteHref } from '../../utils/assets';
 
 function ScreensPage({ boards = [], onBoardsChange, boardsLoading = false }) {
   const { boardName } = useParams();
@@ -157,13 +158,13 @@ function ScreensPage({ boards = [], onBoardsChange, boardsLoading = false }) {
   }, [loadBoard]);
 
   useEffect(() => {
-    try {
-      const stored = localStorage.getItem(AUTH_STORAGE_KEY);
-      const parsed = stored ? JSON.parse(stored) : {};
-      setCurrentUserId(parsed?.user?.id || '');
-    } catch {
-      setCurrentUserId('');
-    }
+    getSession('user')
+      .then((session) => {
+        setCurrentUserId(session?.user?.id || '');
+      })
+      .catch(() => {
+        setCurrentUserId('');
+      });
   }, []);
 
   const updateBoardsList = useCallback(
@@ -517,7 +518,7 @@ function ScreensPage({ boards = [], onBoardsChange, boardsLoading = false }) {
 
   const boardBackgroundStyle = board.background
     ? {
-        backgroundImage: `url(${process.env.PUBLIC_URL}/images/TaskProDesktop/${board.background})`,
+        ...backgroundImageStyle(`images/TaskProDesktop/${board.background}`),
         backgroundSize: 'cover',
         backgroundPosition: 'center',
         backgroundRepeat: 'no-repeat',
@@ -535,7 +536,7 @@ function ScreensPage({ boards = [], onBoardsChange, boardsLoading = false }) {
           onClick={() => setIsFiltersModalOpen(true)}
         >
           <svg className={styles.filterIcon} width="20" height="20" viewBox="0 0 32 32">
-            <use href="/sprites.svg#icon-Filter-White"></use>
+            <use href={spriteHref('icon-Filter-White')}></use>
           </svg>
           <span>Filters</span>
         </button>
@@ -583,7 +584,7 @@ function ScreensPage({ boards = [], onBoardsChange, boardsLoading = false }) {
           >
             <div className={styles.addColumnIconContainer}>
               <svg className={styles.addColumnIcon} width="18" height="18" viewBox="0 0 32 32">
-                <use href="/sprites.svg#icon-big-plus"></use>
+                <use href={spriteHref('icon-big-plus')}></use>
               </svg>
             </div>
             <span>Add another column</span>

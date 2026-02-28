@@ -8,6 +8,7 @@ const Card = require('../models/Card');
 const AdminUserProfile = require('../models/AdminUserProfile');
 const Channel = require('../models/Channel');
 const { createProject } = require('../services/projectService');
+const normalizeAvatarUrl = require('../utils/normalizeAvatarUrl');
 
 const toObjectId = (id) => new mongoose.Types.ObjectId(id);
 const isValidObjectId = (id) => mongoose.Types.ObjectId.isValid(id);
@@ -93,7 +94,7 @@ const mapUser = (user, meta) => {
     id: user._id.toString(),
     name: user.name,
     email: user.email,
-    avatarURL: user.avatarURL || '',
+    avatarURL: normalizeAvatarUrl(user.avatarURL),
     theme: user.theme,
     meta: {
       role: safeMeta.role || 'developer',

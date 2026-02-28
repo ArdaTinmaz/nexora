@@ -1,16 +1,26 @@
 import React, { useEffect, useState } from 'react';
 import styles from './UserInfoModal.module.css';
 import userApi from '../../api/userApi';
-import { AUTH_STORAGE_KEY } from '../../config';
+import { API_ORIGIN } from '../../config';
+import { getSession, setSession } from '../../desktop/session';
+import { showNotification } from '../../desktop/notifications';
+import { spriteHref } from '../../utils/assets';
 
 function UserInfoModal({ isOpen, onClose, onProfileUpdate }) {
+  const readFileAsDataUrl = (file) =>
+    new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(typeof reader.result === 'string' ? reader.result : '');
+      reader.onerror = () => reject(new Error('Avatar secilemedi'));
+      reader.readAsDataURL(file);
+    });
+
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [currentEmail, setCurrentEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
-  const [avatar, setAvatar] = useState(null);
-  const [avatarURL, setAvatarURL] = useState('');
+  const [avatarDataUrl, setAvatarDataUrl] = useState('');
   const [avatarPreview, setAvatarPreview] = useState('');
   const [status, setStatus] = useState('');
   const [error, setError] = useState('');
@@ -25,7 +35,6 @@ function UserInfoModal({ isOpen, onClose, onProfileUpdate }) {
         setName(data?.user?.name || '');
         setEmail(data?.user?.email || '');
         setCurrentEmail(data?.user?.email || '');
-        setAvatarURL(data?.user?.avatarURL || '');
         setAvatarPreview(data?.user?.avatarURL || '');
         if (onProfileUpdate && data?.user) {
           onProfileUpdate(data.user);
@@ -41,34 +50,21 @@ function UserInfoModal({ isOpen, onClose, onProfileUpdate }) {
   }, [isOpen]);
 
   const updateStoredUser = (nextUser) => {
-    try {
-      const storedAuth = localStorage.getItem(AUTH_STORAGE_KEY);
+    getSession('user').then((storedAuth) => {
       if (!storedAuth) return;
-      const parsed = JSON.parse(storedAuth);
-      localStorage.setItem(
-        AUTH_STORAGE_KEY,
-        JSON.stringify({
-          ...parsed,
-          user: { ...(parsed.user || {}), ...nextUser },
-        })
-      );
-    } catch (_) {
-      // ignore
-    }
-  };
-
-  const getBackendOrigin = () => {
-    const apiBase = process.env.REACT_APP_API_URL || 'http://localhost:5001/api';
-    return apiBase.replace(/\/api$/, '');
+      setSession('user', {
+        ...storedAuth,
+        user: { ...(storedAuth.user || {}), ...nextUser },
+      });
+    });
   };
 
   const getAvatarSrc = () => {
-    if (avatarPreview instanceof File) {
-      return URL.createObjectURL(avatarPreview);
-    }
     if (avatarPreview) {
-      if (avatarPreview.startsWith('http')) return avatarPreview;
-      return `${getBackendOrigin()}${avatarPreview}`;
+      if (/^(?:https?:|data:|blob:|file:)/i.test(avatarPreview)) return avatarPreview;
+      if (avatarPreview.startsWith('/')) return `${API_ORIGIN}${avatarPreview}`;
+      if (avatarPreview.startsWith('uploads/')) return `${API_ORIGIN}/${avatarPreview}`;
+      return `${API_ORIGIN}/uploads/${avatarPreview}`;
     }
     return '';
   };
@@ -95,6 +91,10 @@ function UserInfoModal({ isOpen, onClose, onProfileUpdate }) {
           onProfileUpdate(data.user);
         }
         setStatus('Email verified and updated');
+        await showNotification({
+          title: 'Nexora',
+          body: 'Your email address has been verified.',
+        });
         setAwaitingVerification(false);
         setVerificationCode('');
       } catch (err) {
@@ -115,7 +115,7 @@ function UserInfoModal({ isOpen, onClose, onProfileUpdate }) {
       const profileRes = await userApi.updateProfile({
         name,
         password: password || undefined,
-        avatar,
+        avatarURL: avatarDataUrl || undefined,
       });
 
       updateStoredUser(profileRes?.user);
@@ -126,14 +126,19 @@ function UserInfoModal({ isOpen, onClose, onProfileUpdate }) {
       setPassword('');
       setConfirmPassword('');
       if (profileRes?.user?.avatarURL) {
-        setAvatarURL(profileRes.user.avatarURL);
         setAvatarPreview(profileRes.user.avatarURL);
+        setAvatarDataUrl('');
       }
 
       if (email !== currentEmail) {
         await userApi.requestEmailChange({ newEmail: email });
         setAwaitingVerification(true);
         setStatus('Verification code sent to new email');
+      } else {
+        await showNotification({
+          title: 'Nexora',
+          body: 'Your profile was updated.',
+        });
       }
     } catch (err) {
       setError(err.message || 'Update failed');
@@ -148,11 +153,16 @@ function UserInfoModal({ isOpen, onClose, onProfileUpdate }) {
     }
   };
 
-  const handleAvatarChange = (e) => {
+  const handleAvatarChange = async (e) => {
     const file = e.target.files[0];
-    if (file) {
-      setAvatar(file);
-      setAvatarPreview(file);
+    if (!file) return;
+
+    try {
+      const dataUrl = await readFileAsDataUrl(file);
+      setAvatarDataUrl(dataUrl);
+      setAvatarPreview(dataUrl);
+    } catch (err) {
+      setError(err.message || 'Avatar secilemedi');
     }
   };
 
@@ -183,7 +193,7 @@ function UserInfoModal({ isOpen, onClose, onProfileUpdate }) {
                   <img src={getAvatarSrc()} alt="Avatar" />
                 ) : (
                   <svg width="64" height="64" viewBox="0 0 32 32">
-                    <use href="/sprites.svg#icon-user-white"></use>
+                    <use href={spriteHref('icon-user-white')}></use>
                   </svg>
                 )}
               </div>

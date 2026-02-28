@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import styles from './NewBoardModal.module.css';
+import { assetUrl, spriteHref } from '../../utils/assets';
 
 const icons = [
   { id: 'project', name: 'icon-Project' },
@@ -88,7 +89,7 @@ function NewBoardModal({ isOpen, onClose, onCreate }) {
                     height="18" 
                     viewBox="0 0 32 32"
                   >
-                    <use href={`/sprites.svg#${icon.name}`}></use>
+                    <use href={spriteHref(icon.name)}></use>
                   </svg>
                 </button>
               ))}
@@ -106,7 +107,7 @@ function NewBoardModal({ isOpen, onClose, onCreate }) {
               >
                 <div className={styles.emptyBackground}>
                   <svg width="16" height="16" viewBox="0 0 32 32">
-                    <use href="/sprites.svg#icon-plus"></use>
+                    <use href={spriteHref('icon-plus')}></use>
                   </svg>
                 </div>
               </button>
@@ -119,7 +120,7 @@ function NewBoardModal({ isOpen, onClose, onCreate }) {
                   onClick={() => setSelectedBackground(bg)}
                 >
                   <img
-                    src={`${process.env.PUBLIC_URL}/images/TaskProDesktop/${bg}`}
+                    src={assetUrl(`images/TaskProDesktop/${bg}`)}
                     alt={bg}
                     className={styles.backgroundImage}
                   />
@@ -131,7 +132,7 @@ function NewBoardModal({ isOpen, onClose, onCreate }) {
           <button type="submit" className={styles.submitBtn}>
             <div className={styles.plusIconContainer}>
               <svg className={styles.plusIcon} width="20" height="20" viewBox="0 0 32 32">
-                <use href="/sprites.svg#icon-plus"></use>
+                <use href={spriteHref('icon-plus')}></use>
               </svg>
             </div>
             <span className={styles.submitText}>Create</span>

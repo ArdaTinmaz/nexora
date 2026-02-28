@@ -6,12 +6,63 @@
   "scripts": {
     "start:client": "npm --prefix client start",
     "start:server": "npm --prefix server run dev",
-    "start:electron": "wait-on http://localhost:3000 && electron .",
-    "dev": "concurrently \"npm run start:server\" \"npm run start:client\" \"npm run start:electron\""
+    "start:electron": "ELECTRON_MANAGED_BACKEND=1 wait-on http://localhost:3000 && electron .",
+    "dev": "concurrently \"npm run start:client\" \"npm run start:electron\"",
+    "build:client": "npm --prefix client run build",
+    "pack": "npm run build:client && electron-builder --dir",
+    "dist": "npm run build:client && electron-builder",
+    "dist:win": "npm run build:client && electron-builder --win nsis"
   },
   "dependencies": {
+    "socket.io-client": "^4.8.3"
+  },
+  "devDependencies": {
     "concurrently": "^8.2.2",
     "electron": "^29.4.0",
+    "electron-builder": "^24.13.3",
     "wait-on": "^7.2.0"
+  },
+  "build": {
+    "appId": "com.nexora.desktop",
+    "productName": "Nexora",
+    "files": [
+      "electron/**/*",
+      "client/build/**/*",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "server",
+        "to": "server",
+        "filter": [
+          "**/*",
+          "**/.*",
+          "!uploads/**"
+        ]
+      }
+    ],
+    "directories": {
+      "output": "dist"
+    },
+    "protocols": [
+      {
+        "name": "Nexora Deep Links",
+        "schemes": [
+          "nexora"
+        ]
+      }
+    ],
+    "win": {
+      "target": [
+        "nsis"
+      ],
+      "signAndEditExecutable": false
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true
+    }
   }
 }

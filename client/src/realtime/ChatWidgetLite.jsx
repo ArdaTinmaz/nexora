@@ -3,11 +3,10 @@ import { createSocket } from './socketClient';
 import { channelApi } from '../api/channelApi';
 import { teamApi } from '../api/teamApi';
 import userApi from '../api/userApi';
-import { API_BASE_URL } from '../config';
+import { API_ORIGIN } from '../config';
 import './ChatWidgetLite.css';
 
 const DELETED_MESSAGE_TEXT = 'This message was deleted.';
-const API_ORIGIN = API_BASE_URL.replace(/\/api\/?$/, '');
 const MESSAGE_PREVIEW_CHAR_LIMIT = 220;
 
 const formatTime = (timestamp) =>
@@ -51,8 +50,10 @@ const getInitials = (name) =>
 
 const resolveAvatarUrl = (avatarURL) => {
   if (!avatarURL) return '';
-  if (/^https?:\/\//i.test(avatarURL)) return avatarURL;
-  return `${API_ORIGIN}${avatarURL.startsWith('/') ? avatarURL : `/${avatarURL}`}`;
+  if (/^(?:https?:|data:|blob:|file:)/i.test(avatarURL)) return avatarURL;
+  if (avatarURL.startsWith('/')) return `${API_ORIGIN}${avatarURL}`;
+  if (avatarURL.startsWith('uploads/')) return `${API_ORIGIN}/${avatarURL}`;
+  return `${API_ORIGIN}/uploads/${avatarURL}`;
 };
 
 const ChatWidgetLite = () => {

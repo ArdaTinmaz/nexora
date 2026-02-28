@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import styles from './EditBoardModal.module.css';
+import { assetUrl, spriteHref } from '../../utils/assets';
 
 const icons = [
   { id: 'project', name: 'icon-Project' },
@@ -95,7 +96,7 @@ function EditBoardModal({ isOpen, onClose, onEdit, board, disableTitle = false }
                     height="18" 
                     viewBox="0 0 32 32"
                   >
-                    <use href={`/sprites.svg#${icon.name}`}></use>
+                    <use href={spriteHref(icon.name)}></use>
                   </svg>
                 </button>
               ))}
@@ -113,7 +114,7 @@ function EditBoardModal({ isOpen, onClose, onEdit, board, disableTitle = false }
               >
                 <div className={styles.emptyBackground}>
                   <svg width="16" height="16" viewBox="0 0 32 32">
-                    <use href="/sprites.svg#icon-plus"></use>
+                    <use href={spriteHref('icon-plus')}></use>
                   </svg>
                 </div>
               </button>
@@ -126,7 +127,7 @@ function EditBoardModal({ isOpen, onClose, onEdit, board, disableTitle = false }
                   onClick={() => setSelectedBackground(bg)}
                 >
                   <img
-                    src={`${process.env.PUBLIC_URL}/images/TaskProDesktop/${bg}`}
+                    src={assetUrl(`images/TaskProDesktop/${bg}`)}
                     alt={bg}
                     className={styles.backgroundImage}
                   />
@@ -138,7 +139,7 @@ function EditBoardModal({ isOpen, onClose, onEdit, board, disableTitle = false }
           <button type="submit" className={styles.submitBtn}>
             <div className={styles.plusIconContainer}>
               <svg className={styles.plusIcon} width="20" height="20" viewBox="0 0 32 32">
-                <use href="/sprites.svg#icon-plus"></use>
+                <use href={spriteHref('icon-plus')}></use>
               </svg>
             </div>
             <span className={styles.submitText}>Edit</span>

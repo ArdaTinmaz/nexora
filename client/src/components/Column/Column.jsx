@@ -1,6 +1,7 @@
 import React from 'react';
 import styles from './Column.module.css';
 import Card from '../Card/Card';
+import { spriteHref } from '../../utils/assets';
 
 function Column({
   column,
@@ -114,7 +115,7 @@ function Column({
                 title="Edit column"
               >
                 <svg width="16" height="16" viewBox="0 0 32 32">
-                  <use href="/sprites.svg#icon-pencil-01"></use>
+                  <use href={spriteHref('icon-pencil-01')}></use>
                 </svg>
               </button>
             )}
@@ -126,7 +127,7 @@ function Column({
                 title="Delete column"
               >
                 <svg width="16" height="16" viewBox="0 0 32 32">
-                  <use href="/sprites.svg#icon-trash-04"></use>
+                  <use href={spriteHref('icon-trash-04')}></use>
                 </svg>
               </button>
             )}
@@ -247,7 +248,7 @@ function Column({
         >
           <div className={styles.addCardIconContainer}>
             <svg className={styles.addCardIcon} width="20" height="20" viewBox="0 0 32 32">
-              <use href="/sprites.svg#icon-big-plus"></use>
+              <use href={spriteHref('icon-big-plus')}></use>
             </svg>
           </div>
           <span className={styles.addCardText}>Add another card</span>

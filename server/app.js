@@ -11,7 +11,12 @@ const teamRoutes = require('./routes/teamRoutes');
 const projectRoutes = require('./routes/projectRoutes');
 const adminRoutes = require('./routes/adminRoutes');
 const taskRoutes = require('./routes/taskRoutes');
-const path = require('path');
+const {
+  ensureUploadsDir,
+  getPrimaryUploadsDir,
+  getLegacyUploadsDirs,
+  migrateLegacyUploads,
+} = require('./utils/uploadsDir');
 
 const app = express();
 
@@ -41,7 +46,12 @@ const buildCorsConfig = () => {
 app.use(cors(buildCorsConfig()));
 app.use(express.json({ limit: '10mb' }));
 app.use(morgan('dev'));
-app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+ensureUploadsDir();
+migrateLegacyUploads();
+app.use('/uploads', express.static(getPrimaryUploadsDir()));
+getLegacyUploadsDirs().forEach((uploadsDir) => {
+  app.use('/uploads', express.static(uploadsDir));
+});
 
 app.use('/api/auth', authRoutes);
 app.use('/api/boards', boardRoutes);

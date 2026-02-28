@@ -10,9 +10,10 @@ import MoveCardModal from '../../components/MoveCardModal/MoveCardModal';
 import Column from '../../components/Column/Column';
 import ConfirmModal from '../../components/ConfirmModal/ConfirmModal';
 import CardDetailsModal from '../../components/CardDetailsModal/CardDetailsModal';
+import { backgroundImageStyle, spriteHref } from '../../utils/assets';
 import EditBoardModal from '../../components/EditBoardModal/EditBoardModal';
 import { companyBoardApi } from '../../api/companyBoardApi';
-import { AUTH_STORAGE_KEY } from '../../config';
+import { getSession } from '../../desktop/session';
 
 function CompanyProjectPage({ projects = [], loading = false, onProjectsChange }) {
   const { projectId } = useParams();
@@ -159,13 +160,13 @@ function CompanyProjectPage({ projects = [], loading = false, onProjectsChange }
   }, [searchParams, canManage]);
 
   useEffect(() => {
-    try {
-      const stored = localStorage.getItem(AUTH_STORAGE_KEY);
-      const parsed = stored ? JSON.parse(stored) : {};
-      setCurrentUserId(parsed?.user?.id || '');
-    } catch {
-      setCurrentUserId('');
-    }
+    getSession('user')
+      .then((session) => {
+        setCurrentUserId(session?.user?.id || '');
+      })
+      .catch(() => {
+        setCurrentUserId('');
+      });
   }, []);
 
   const closeEditBoardModal = () => {
@@ -561,7 +562,7 @@ function CompanyProjectPage({ projects = [], loading = false, onProjectsChange }
 
   const boardBackgroundStyle = board.background
     ? {
-        backgroundImage: `url(${process.env.PUBLIC_URL}/images/TaskProDesktop/${board.background})`,
+        ...backgroundImageStyle(`images/TaskProDesktop/${board.background}`),
         backgroundSize: 'cover',
         backgroundPosition: 'center',
         backgroundRepeat: 'no-repeat',
@@ -575,7 +576,7 @@ function CompanyProjectPage({ projects = [], loading = false, onProjectsChange }
         <div className={styles.boardHeading}>
           <div className={styles.boardIcon}>
             <svg width="20" height="20" viewBox="0 0 32 32">
-              <use href={`/sprites.svg#${boardIconName}`}></use>
+              <use href={spriteHref(boardIconName)}></use>
             </svg>
           </div>
           <h1 className={styles.boardTitle}>{projectName || board.name}</h1>
@@ -586,7 +587,7 @@ function CompanyProjectPage({ projects = [], loading = false, onProjectsChange }
           onClick={() => setIsFiltersModalOpen(true)}
         >
           <svg className={styles.filterIcon} width="20" height="20" viewBox="0 0 32 32">
-            <use href="/sprites.svg#icon-Filter-White"></use>
+            <use href={spriteHref('icon-Filter-White')}></use>
           </svg>
           <span>Filters</span>
         </button>
@@ -640,7 +641,7 @@ function CompanyProjectPage({ projects = [], loading = false, onProjectsChange }
             >
               <div className={styles.addColumnIconContainer}>
                 <svg className={styles.addColumnIcon} width="18" height="18" viewBox="0 0 32 32">
-                  <use href="/sprites.svg#icon-big-plus"></use>
+                  <use href={spriteHref('icon-big-plus')}></use>
                 </svg>
               </div>
               <span>Add another column</span>

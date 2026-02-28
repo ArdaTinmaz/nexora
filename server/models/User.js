@@ -1,5 +1,6 @@
 const mongoose = require('mongoose');
 const bcrypt = require('bcryptjs');
+const normalizeAvatarUrl = require('../utils/normalizeAvatarUrl');
 
 const { Schema } = mongoose;
 
@@ -39,7 +40,7 @@ const mapUserDoc = (doc) => {
     email: data.email,
     password: data.password,
     role: data.role || 'developer',
-    avatarURL: data.avatarURL || '',
+    avatarURL: normalizeAvatarUrl(data.avatarURL),
     theme: data.theme || 'light',
     refreshTokenHash: data.refreshTokenHash,
     passwordResetTokenHash: data.passwordResetTokenHash,

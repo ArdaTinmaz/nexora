@@ -1,6 +1,7 @@
 import React from 'react';
-import { API_BASE_URL } from '../../config';
+import { API_ORIGIN } from '../../config';
 import styles from './Card.module.css';
+import { spriteHref } from '../../utils/assets';
 
 const priorityColors = {
   without: { color: '#808080', label: 'without' },
@@ -45,10 +46,10 @@ const isDeadlineToday = (value) => {
 
 const resolveAvatarUrl = (avatarURL) => {
   if (!avatarURL) return '';
-  if (/^https?:\/\//i.test(avatarURL)) return avatarURL;
-  const baseURL = API_BASE_URL.replace(/\/api\/?$/, '');
-  if (avatarURL.startsWith('/')) return `${baseURL}${avatarURL}`;
-  return `${baseURL}/${avatarURL}`;
+  if (/^(?:https?:|data:|blob:|file:)/i.test(avatarURL)) return avatarURL;
+  if (avatarURL.startsWith('/')) return `${API_ORIGIN}${avatarURL}`;
+  if (avatarURL.startsWith('uploads/')) return `${API_ORIGIN}/${avatarURL}`;
+  return `${API_ORIGIN}/uploads/${avatarURL}`;
 };
 
 function Card({
@@ -207,7 +208,7 @@ function Card({
                   title="Move card"
                 >
                   <svg width="24" height="24" viewBox="0 0 32 32">
-                    <use href="/sprites.svg#icon-arrow-circle-broken-right"></use>
+                    <use href={spriteHref('icon-arrow-circle-broken-right')}></use>
                   </svg>
                 </button>
               )}
@@ -220,7 +221,7 @@ function Card({
                   title="Edit card"
                 >
                   <svg width="24" height="24" viewBox="0 0 32 32">
-                    <use href="/sprites.svg#icon-pencil-01"></use>
+                    <use href={spriteHref('icon-pencil-01')}></use>
                   </svg>
                 </button>
               )}
@@ -233,7 +234,7 @@ function Card({
                   title="Delete card"
                 >
                   <svg width="24" height="24" viewBox="0 0 32 32">
-                    <use href="/sprites.svg#icon-trash-04"></use>
+                    <use href={spriteHref('icon-trash-04')}></use>
                   </svg>
                 </button>
               )}

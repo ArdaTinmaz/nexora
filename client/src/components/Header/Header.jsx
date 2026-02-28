@@ -2,8 +2,10 @@ import React, { useEffect, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import styles from './Header.module.css';
 import UserInfoModal from '../UserInfoModal/UserInfoModal';
-import { AUTH_STORAGE_KEY } from '../../config';
+import { API_ORIGIN } from '../../config';
 import userApi from '../../api/userApi';
+import { getSession } from '../../desktop/session';
+import { spriteHref } from '../../utils/assets';
 
 function Header() {
   const location = useLocation();
@@ -13,34 +15,20 @@ function Header() {
   const [error, setError] = useState('');
   const isTasksActive = location.pathname.includes('/home/tasks');
 
-  const getBackendOrigin = () => {
-    const apiBase = process.env.REACT_APP_API_URL || 'http://localhost:5001/api';
-    return apiBase.replace(/\/api$/, '');
-  };
-
   const avatarSrc = () => {
     if (user?.avatarURL) {
-      if (user.avatarURL.startsWith('http')) return user.avatarURL;
-      return `${getBackendOrigin()}${user.avatarURL}`;
+      if (/^(?:https?:|data:|blob:|file:)/i.test(user.avatarURL)) return user.avatarURL;
+      if (user.avatarURL.startsWith('/')) return `${API_ORIGIN}${user.avatarURL}`;
+      if (user.avatarURL.startsWith('uploads/')) return `${API_ORIGIN}/${user.avatarURL}`;
+      return `${API_ORIGIN}/uploads/${user.avatarURL}`;
     }
     return null;
   };
 
   useEffect(() => {
-    const loadFromStorage = () => {
-      try {
-        const stored = localStorage.getItem(AUTH_STORAGE_KEY);
-        if (!stored) return null;
-        const parsed = JSON.parse(stored);
-        return parsed?.token ? parsed : null;
-      } catch (_) {
-        return null;
-      }
-    };
-
     const fetchProfile = async () => {
       try {
-        const stored = loadFromStorage();
+        const stored = await getSession('user');
         if (!stored?.token) return;
         const data = await userApi.getProfile();
         setUser(data?.user || null);
@@ -49,11 +37,15 @@ function Header() {
       }
     };
 
-    const storedAuth = loadFromStorage();
-    if (storedAuth?.user) {
-      setUser(storedAuth.user);
-      fetchProfile();
-    }
+    const loadStoredSession = async () => {
+      const storedAuth = await getSession('user');
+      if (storedAuth?.user) {
+        setUser(storedAuth.user);
+        fetchProfile();
+      }
+    };
+
+    loadStoredSession();
   }, []);
 
   return (
@@ -80,7 +72,7 @@ function Header() {
                   <img src={avatarSrc()} alt="Avatar" />
                 ) : (
                   <svg width="32" height="32" viewBox="0 0 32 32">
-                    <use href="/sprites.svg#icon-user-white"></use>
+                    <use href={spriteHref('icon-user-white')}></use>
                   </svg>
                 )}
               </div>

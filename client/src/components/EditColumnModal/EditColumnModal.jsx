@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import styles from './EditColumnModal.module.css';
+import { spriteHref } from '../../utils/assets';
 
 function EditColumnModal({ isOpen, onClose, onEdit, column }) {
   const [title, setTitle] = useState('');
@@ -69,7 +70,7 @@ function EditColumnModal({ isOpen, onClose, onEdit, column }) {
           <button type="submit" className={styles.submitBtn}>
             <div className={styles.plusIconContainer}>
               <svg className={styles.plusIcon} width="20" height="20" viewBox="0 0 32 32">
-                <use href="/sprites.svg#icon-plus"></use>
+                <use href={spriteHref('icon-plus')}></use>
               </svg>
             </div>
             <span className={styles.submitText}>Edit</span>

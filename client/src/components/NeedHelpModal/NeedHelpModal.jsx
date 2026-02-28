@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import styles from './NeedHelpModal.module.css';
 import supportApi from '../../api/supportApi';
+import { assetUrl } from '../../utils/assets';
 
 function NeedHelpModal({ isOpen, onClose, onSubmit }) {
   const [email, setEmail] = useState('');
@@ -66,7 +67,7 @@ function NeedHelpModal({ isOpen, onClose, onSubmit }) {
         <div className={styles.hero}>
           <div className={styles.heroImage}>
             <img
-              src={`${process.env.PUBLIC_URL}/images/TaskProDesktop/Flower.png`}
+              src={assetUrl('images/TaskProDesktop/Flower.png')}
               alt="Help"
             />
           </div>

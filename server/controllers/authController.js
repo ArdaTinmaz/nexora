@@ -6,13 +6,15 @@ const UserModel = require('../models/User');
 const generateToken = require('../utils/generateToken');
 const generateRefreshToken = require('../utils/generateRefreshToken');
 const sendPasswordResetEmail = require('../utils/sendPasswordResetEmail');
+const { getClientBaseUrl, getDesktopBaseUrl } = require('../utils/getClientBaseUrl');
+const normalizeAvatarUrl = require('../utils/normalizeAvatarUrl');
 
 const buildUserResponse = (userDoc) => ({
   id: userDoc.id,
   name: userDoc.name,
   email: userDoc.email,
   role: userDoc.role || 'developer',
-  avatarURL: userDoc.avatarURL,
+  avatarURL: normalizeAvatarUrl(userDoc.avatarURL),
   theme: userDoc.theme,
 });
 
@@ -49,15 +51,6 @@ const sendAuthResponse = async ({ res, user, statusCode, message }) => {
     refreshToken,
     user: buildUserResponse(user),
   });
-};
-
-const getClientBaseURL = () => {
-  if (!process.env.CLIENT_URL) {
-    return 'http://localhost:3000';
-  }
-
-  const [firstURL] = process.env.CLIENT_URL.split(',').map((item) => item.trim()).filter(Boolean);
-  return firstURL || 'http://localhost:3000';
 };
 
 const verifyRefreshToken = async (refreshToken) => {
@@ -253,20 +246,29 @@ exports.forgotPassword = async (req, res, next) => {
 
     await UserModel.setPasswordResetToken(user.id, resetTokenHash, Date.now() + 60 * 60 * 1000);
 
-    const clientURL = getClientBaseURL().replace(/\/$/, '');
-    const resetURL = `${clientURL}/reset-password?token=${resetToken}`;
+    const clientURL = getClientBaseUrl().replace(/\/$/, '');
+    const desktopURL = getDesktopBaseUrl().replace(/\/$/, '');
+    const resetPath = `/reset-password?token=${resetToken}`;
+    const loginPath = '/auth/login';
+    const resetURL = clientURL.startsWith('http')
+      ? `${clientURL}${resetPath}`
+      : `${desktopURL}${resetPath}`;
+    const loginURL = clientURL.startsWith('http')
+      ? `${clientURL}${loginPath}`
+      : `${desktopURL}${loginPath}`;
 
     try {
       await sendPasswordResetEmail({
         to: user.email,
         name: user.name,
+        resetToken,
         resetURL,
+        loginURL,
       });
     } catch (emailError) {
       await UserModel.clearPasswordResetToken(user.id);
-
-      const error = new Error('Şifre sıfırlama e-postası gönderilemedi');
-      error.statusCode = 500;
+      const error = new Error(emailError?.message || 'Şifre sıfırlama e-postası gönderilemedi');
+      error.statusCode = emailError?.statusCode || 500;
       throw error;
     }
 

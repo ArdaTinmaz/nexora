@@ -3,9 +3,11 @@ import { useForm } from 'react-hook-form';
 import { yupResolver } from '@hookform/resolvers/yup';
 import * as yup from 'yup';
 import { useNavigate } from 'react-router-dom';
-import { API_BASE_URL, AUTH_STORAGE_KEY } from '../../config';
 import ForgotPasswordModal from '../ForgotPasswordModal/ForgotPasswordModal';
 import styles from './LoginForm.module.css';
+import { authApi } from '../../api/authApi';
+import { setSession } from '../../desktop/session';
+import { showNotification } from '../../desktop/notifications';
 
 const schema = yup.object({
   email: yup
@@ -47,38 +49,27 @@ function LoginForm() {
     };
 
     try {
-      const response = await fetch(`${API_BASE_URL}/auth/login`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        credentials: 'include',
-        body: JSON.stringify(payload),
-      });
+      const result = await authApi.login(payload);
 
-      const result = await response
-        .json()
-        .catch(() => ({}));
-
-      if (!response.ok || !result?.token || !result?.refreshToken || !result?.user) {
-        const errorMessage = result?.message || 'Login failed. Please check your credentials.';
-        setServerError(errorMessage);
+      if (!result?.token || !result?.refreshToken || !result?.user) {
+        setServerError('Login failed. Please check your credentials.');
         return;
       }
 
-      localStorage.setItem(
-        AUTH_STORAGE_KEY,
-        JSON.stringify({
-          token: result.token,
-          refreshToken: result.refreshToken,
-          user: result.user,
-        }),
-      );
+      await setSession('user', {
+        token: result.token,
+        refreshToken: result.refreshToken,
+        user: result.user,
+      });
+      await showNotification({
+        title: 'Nexora',
+        body: `Welcome back, ${result.user.name || 'user'}.`,
+      });
 
       navigate('/home');
     } catch (error) {
       console.error('Login error:', error);
-      setServerError('Unable to reach the server. Please try again.');
+      setServerError(error.message || 'Unable to reach the server. Please try again.');
     }
   };
 
