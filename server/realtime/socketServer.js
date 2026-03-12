@@ -18,6 +18,7 @@ const {
   updateChannelMessage,
   deleteChannelMessage,
 } = require('../services/channelService');
+const { createNotification } = require('../services/notificationService');
 
 const getAllowedOrigins = () => {
   if (!process.env.CLIENT_URL) return ['http://localhost:3000'];
@@ -82,6 +83,23 @@ const startSocketServer = async () => {
             assignedTo,
           });
 
+          if (assignment.assignedTo !== userId) {
+            await createNotification({
+              userId: assignment.assignedTo,
+              type: 'task_assigned',
+              category: 'general',
+              title: 'New task assigned',
+              message: 'A task has been assigned to you.',
+              link: '/home/tasks',
+              meta: {
+                assignmentId: assignment.id,
+                cardId: assignment.cardId || null,
+                projectId: assignment.projectId || '',
+                teamId: assignment.teamId || '',
+              },
+            });
+          }
+
           io.to(`user:${assignedTo}`).emit('taskAssigned', assignment);
           io.to(`team:${teamId}`).emit('taskAssigned', assignment);
 
@@ -138,6 +156,20 @@ const startSocketServer = async () => {
           fromUserId: userId,
           toUserId: targetUserId,
         });
+        await createNotification({
+          userId: targetUserId,
+          type: 'channel_invite_received',
+          category: 'general',
+          title: 'Channel invitation',
+          message: 'You have been invited to join a channel.',
+          link: `/home/tasks?chat=1&channelId=${channelId}`,
+          meta: {
+            channelId,
+            inviteId: invite._id?.toString() || invite.id || '',
+            fromUserId: userId,
+          },
+          dedupKey: `channel-invite:${channelId}:${targetUserId}`,
+        });
         io.to(`user:${targetUserId}`).emit('channelInvited', {
           id: invite._id?.toString() || invite.id,
           channelId,
@@ -156,7 +188,25 @@ const startSocketServer = async () => {
         io.to(`channel:${channelId}`).emit('channelMemberJoined', {
           channelId,
           userId,
+          userName: socket.user?.name || 'User',
+          avatarURL: socket.user?.avatarURL || '',
+          joinedAt: Date.now(),
         });
+        const inviterId = result?.invite?.fromUserId?.toString?.() || result?.invite?.fromUserId || '';
+        if (inviterId && inviterId !== userId) {
+          await createNotification({
+            userId: inviterId,
+            type: 'channel_invite_accepted',
+            category: 'general',
+            title: 'Invitation accepted',
+            message: `${socket.user?.name || 'A user'} joined #${result?.channel?.name || 'channel'}.`,
+            link: `/home/tasks?chat=1&channelId=${channelId}`,
+            meta: {
+              channelId,
+              joinedUserId: userId,
+            },
+          });
+        }
         callback({ ok: true, channel: result.channel });
       } catch (err) {
         callback({ error: err.message });

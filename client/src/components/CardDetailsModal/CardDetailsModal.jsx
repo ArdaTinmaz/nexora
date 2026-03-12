@@ -11,6 +11,12 @@ const priorityMeta = {
 function CardDetailsModal({ isOpen, onClose, card }) {
   if (!isOpen || !card) return null;
 
+  const assigneeNames = Array.isArray(card.assignees) && card.assignees.length
+    ? card.assignees
+        .map((assignee) => String(assignee?.name || 'User').trim())
+        .filter(Boolean)
+    : (card.ownerName ? [String(card.ownerName).trim()] : []);
+
   const formatDate = (value) => {
     if (!value) return '';
     const date =
@@ -80,7 +86,7 @@ function CardDetailsModal({ isOpen, onClose, card }) {
 
         <div className={styles.section}>
           <p className={styles.label}>Assigned to</p>
-          <p className={styles.value}>{card.ownerName || 'Unassigned'}</p>
+          <p className={styles.value}>{assigneeNames.length ? assigneeNames.join(', ') : 'Unassigned'}</p>
         </div>
       </div>
     </div>

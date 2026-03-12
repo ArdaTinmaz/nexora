@@ -6,6 +6,7 @@ const Project = require('../models/Project');
 const Team = require('../models/Team');
 const TaskAssignment = require('../models/TaskAssignment');
 const { findUserRoleInTeam } = require('../realtime/roomAuth');
+const { createNotificationsForUsers } = require('../services/notificationService');
 
 const now = () => Date.now();
 
@@ -34,6 +35,64 @@ const toObjectId = (value, message) => {
   return new mongoose.Types.ObjectId(value);
 };
 
+const assigneeLimitByPriority = {
+  without: 1,
+  low: 1,
+  medium: 2,
+  high: 3,
+};
+
+const getMaxAssignees = (priority) => assigneeLimitByPriority[priority] || 1;
+
+const normalizeCardAssignees = (doc) => {
+  const mapped = Array.isArray(doc?.assignees)
+    ? doc.assignees
+        .map((assignee) => {
+          const userId = assignee?.userId ? assignee.userId.toString() : '';
+          if (!userId) return null;
+          return {
+            userId,
+            name: assignee?.name || '',
+            avatarURL: assignee?.avatarURL || '',
+            claimedAt: Number.isFinite(assignee?.claimedAt) ? assignee.claimedAt : null,
+          };
+        })
+        .filter(Boolean)
+    : [];
+
+  const deduped = [];
+  const seen = new Set();
+  mapped.forEach((assignee) => {
+    if (seen.has(assignee.userId)) return;
+    seen.add(assignee.userId);
+    deduped.push(assignee);
+  });
+
+  if (deduped.length) return deduped;
+
+  if (doc?.ownerId) {
+    return [{
+      userId: doc.ownerId.toString(),
+      name: doc.ownerName || '',
+      avatarURL: doc.ownerAvatarURL || '',
+      claimedAt: Number.isFinite(doc?.updatedAt) ? doc.updatedAt : null,
+    }];
+  }
+
+  return [];
+};
+
+const toStoredAssignees = (assignees) =>
+  assignees.map((assignee) => ({
+    userId: toObjectId(assignee.userId, 'Invalid user'),
+    name: assignee.name || '',
+    avatarURL: assignee.avatarURL || '',
+    claimedAt: Number.isFinite(assignee.claimedAt) ? assignee.claimedAt : now(),
+  }));
+
+const isUserAssignedToCard = (card, userId) =>
+  normalizeCardAssignees(card).some((assignee) => assignee.userId === userId);
+
 const mapBoard = (doc) => ({
   id: doc._id.toString(),
   name: doc.name,
@@ -53,22 +112,28 @@ const mapColumn = (doc) => ({
   updatedAt: doc.updatedAt,
 });
 
-const mapCard = (doc) => ({
-  id: doc._id.toString(),
-  columnId: doc.columnId.toString(),
-  title: doc.title,
-  description: doc.description,
-  priority: doc.priority,
-  position: Number.isFinite(doc.position) ? doc.position : 0,
-  deadline: doc.deadline,
-  completed: Boolean(doc.completed),
-  completedAt: doc.completedAt ?? null,
-  ownerId: doc.ownerId ? doc.ownerId.toString() : null,
-  ownerName: doc.ownerName || '',
-  ownerAvatarURL: doc.ownerAvatarURL || '',
-  createdAt: doc.createdAt,
-  updatedAt: doc.updatedAt,
-});
+const mapCard = (doc) => {
+  const assignees = normalizeCardAssignees(doc);
+  const primaryAssignee = assignees[0] || null;
+
+  return {
+    id: doc._id.toString(),
+    columnId: doc.columnId.toString(),
+    title: doc.title,
+    description: doc.description,
+    priority: doc.priority,
+    position: Number.isFinite(doc.position) ? doc.position : 0,
+    deadline: doc.deadline,
+    completed: Boolean(doc.completed),
+    completedAt: doc.completedAt ?? null,
+    ownerId: primaryAssignee?.userId || null,
+    ownerName: primaryAssignee?.name || '',
+    ownerAvatarURL: primaryAssignee?.avatarURL || '',
+    assignees,
+    createdAt: doc.createdAt,
+    updatedAt: doc.updatedAt,
+  };
+};
 
 const normalizeDeadlineInput = (value, fallback = null) => {
   if (typeof value === 'undefined') return fallback;
@@ -105,6 +170,13 @@ const normalizeDeadlineInput = (value, fallback = null) => {
   }
 
   throw badRequest('Invalid deadline');
+};
+
+const toAssignmentDeadline = (value) => {
+  if (!value) return null;
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return null;
+  return parsed.getTime();
 };
 
 const clampIndex = (value, min, max) => Math.min(Math.max(value, min), max);
@@ -180,6 +252,26 @@ const getOrCreateCompanyBoard = async ({ projectId }) => {
 
   board = created.toObject ? created.toObject() : created;
   return board;
+};
+
+const getProjectUserIds = async (projectObjectId) => {
+  const teams = await Team.find({
+    $or: [{ projectId: projectObjectId }, { projectHistory: projectObjectId }],
+  }).lean();
+
+  const unique = new Set();
+  teams.forEach((team) => {
+    if (team?.leaderId) {
+      unique.add(team.leaderId.toString());
+    }
+    (team?.members || []).forEach((member) => {
+      if (member?.userId) {
+        unique.add(member.userId.toString());
+      }
+    });
+  });
+
+  return [...unique];
 };
 
 const ensureBoardAndColumn = async (boardId, columnId) => {
@@ -429,7 +521,7 @@ const createCard = async (req, res, next) => {
       throw badRequest('User info is missing');
     }
     const { projectId, columnId } = req.params;
-    const { role } = await getUserRoleForProject({ projectId, userId });
+    const { role, teamId, projectObjectId } = await getUserRoleForProject({ projectId, userId });
     if (!['team_leader', 'admin'].includes(role)) {
       throw forbidden('You are not authorized for this action');
     }
@@ -449,21 +541,59 @@ const createCard = async (req, res, next) => {
     const nextPosition = Number.isFinite(latestCard?.position) ? latestCard.position + 1 : 0;
 
     const timestamp = now();
+    const normalizedDeadline = normalizeDeadlineInput(deadline, null);
     const card = await Card.create({
       columnId: columnObjectId,
       title: title.trim(),
       description,
       priority,
       position: nextPosition,
-      deadline: normalizeDeadlineInput(deadline, null),
+      deadline: normalizedDeadline,
       completed: false,
       completedAt: null,
       ownerId: null,
       ownerName: '',
       ownerAvatarURL: '',
+      assignees: [],
       createdAt: timestamp,
       updatedAt: timestamp,
     });
+
+    try {
+      await TaskAssignment.create({
+        cardId: card._id.toString(),
+        title: card.title,
+        description: card.description,
+        priority: card.priority,
+        deadline: toAssignmentDeadline(normalizedDeadline),
+        assignedBy: toObjectId(userId, 'Invalid user'),
+        assignedTo: toObjectId(userId, 'Invalid user'),
+        teamId: toObjectId(teamId, 'Invalid team'),
+        projectId: projectObjectId,
+        assignedAt: timestamp,
+        status: 'in-progress',
+      });
+    } catch (assignmentError) {
+      await Card.deleteOne({ _id: card._id });
+      throw assignmentError;
+    }
+
+    const projectUserIds = await getProjectUserIds(projectObjectId);
+    const recipients = projectUserIds.filter((memberId) => memberId !== userId);
+    if (recipients.length) {
+      await createNotificationsForUsers(recipients, {
+        type: 'project_unassigned_card',
+        category: 'general',
+        title: 'New unassigned card',
+        message: `A new unassigned card "${card.title}" is available to claim.`,
+        link: `/home/company/${projectId}`,
+        meta: {
+          projectId,
+          columnId: columnId.toString(),
+          cardId: card._id.toString(),
+        },
+      });
+    }
 
     res.status(201).json(mapCard(card));
   } catch (error) {
@@ -492,7 +622,7 @@ const updateCard = async (req, res, next) => {
     if (!existing) {
       throw notFound('Card not found');
     }
-    if (!existing.ownerId || existing.ownerId.toString() !== userId) {
+    if (!isUserAssignedToCard(existing, userId)) {
       throw forbidden('You can update only your own cards');
     }
 
@@ -554,7 +684,7 @@ const setCardCompletion = async (req, res, next) => {
     if (!existing) {
       throw notFound('Card not found');
     }
-    if (!canManage && (!existing.ownerId || existing.ownerId.toString() !== userId)) {
+    if (!canManage && !isUserAssignedToCard(existing, userId)) {
       throw forbidden('You can update completion only for your own cards');
     }
 
@@ -605,34 +735,97 @@ const setCardOwnership = async (req, res, next) => {
       throw notFound('Card not found');
     }
 
-    const currentOwnerId = existing.ownerId ? existing.ownerId.toString() : '';
+    const currentAssignees = normalizeCardAssignees(existing);
+    const isAlreadyAssigned = currentAssignees.some((assignee) => assignee.userId === userId);
+    const timestamp = now();
+
     if (action === 'claim') {
-      if (currentOwnerId && currentOwnerId !== userId && !canManage) {
-        throw forbidden('Card is already claimed by another user');
+      if (isAlreadyAssigned) {
+        res.json(mapCard(existing));
+        return;
       }
+
+      const maxAssigneeCount = getMaxAssignees(existing.priority);
+      if (currentAssignees.length >= maxAssigneeCount) {
+        throw forbidden('Card has reached maximum assignee limit');
+      }
+
+      const nextAssignees = [
+        ...currentAssignees,
+        {
+          userId,
+          name: req.user?.name || req.user?.email || '',
+          avatarURL: req.user?.avatarURL || '',
+          claimedAt: timestamp,
+        },
+      ];
+      const primaryAssignee = nextAssignees[0] || null;
 
       const updated = await Card.findOneAndUpdate(
         { _id: cardObjectId, columnId: columnObjectId },
         {
-          ownerId: toObjectId(userId, 'Invalid user'),
-          ownerName: req.user?.name || req.user?.email || '',
-          ownerAvatarURL: req.user?.avatarURL || '',
-          updatedAt: now(),
+          assignees: toStoredAssignees(nextAssignees),
+          ownerId: primaryAssignee ? toObjectId(primaryAssignee.userId, 'Invalid user') : null,
+          ownerName: primaryAssignee?.name || '',
+          ownerAvatarURL: primaryAssignee?.avatarURL || '',
+          updatedAt: timestamp,
         },
         { new: true }
       ).lean();
+
+      const teamsInProject = await Team.find({
+        $or: [
+          { projectId: toObjectId(projectId, 'Invalid project') },
+          { projectHistory: toObjectId(projectId, 'Invalid project') },
+        ],
+      }).lean();
+      const leaderRecipients = [
+        ...new Set(
+          teamsInProject
+            .map((team) => team?.leaderId?.toString?.() || '')
+            .filter(Boolean)
+            .filter((leaderId) => leaderId !== userId)
+        ),
+      ];
+
+      if (leaderRecipients.length) {
+        await createNotificationsForUsers(leaderRecipients, {
+          type: 'card_claimed',
+          category: 'general',
+          title: 'Card claimed',
+          message: `${req.user?.name || 'A team member'} claimed "${existing.title}".`,
+          link: `/home/company/${projectId}`,
+          meta: {
+            projectId,
+            columnId,
+            cardId,
+            claimedBy: userId,
+          },
+        });
+      }
 
       res.json(mapCard(updated));
       return;
     }
 
-    if (currentOwnerId && currentOwnerId !== userId && !canManage) {
+    if (!isAlreadyAssigned && !canManage) {
       throw forbidden('You cannot release ownership of this card');
     }
+    if (!isAlreadyAssigned) {
+      throw forbidden('Card is not assigned to you');
+    }
 
+    const nextAssignees = currentAssignees.filter((assignee) => assignee.userId !== userId);
+    const primaryAssignee = nextAssignees[0] || null;
     const updated = await Card.findOneAndUpdate(
       { _id: cardObjectId, columnId: columnObjectId },
-      { ownerId: null, ownerName: '', ownerAvatarURL: '', updatedAt: now() },
+      {
+        assignees: toStoredAssignees(nextAssignees),
+        ownerId: primaryAssignee ? toObjectId(primaryAssignee.userId, 'Invalid user') : null,
+        ownerName: primaryAssignee?.name || '',
+        ownerAvatarURL: primaryAssignee?.avatarURL || '',
+        updatedAt: timestamp,
+      },
       { new: true }
     ).lean();
 
@@ -700,7 +893,7 @@ const moveCard = async (req, res, next) => {
     if (!existing) {
       throw notFound('Card not found');
     }
-    if (!canManage && (!existing.ownerId || existing.ownerId.toString() !== userId)) {
+    if (!canManage && !isUserAssignedToCard(existing, userId)) {
       throw forbidden('You can move only your own cards');
     }
 

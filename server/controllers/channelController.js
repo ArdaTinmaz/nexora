@@ -14,6 +14,7 @@ const {
   acceptInvite,
   ensureChannelMember,
 } = require('../services/channelService');
+const { createNotification } = require('../services/notificationService');
 
 exports.getChannels = async (req, res, next) => {
   try {
@@ -232,6 +233,21 @@ exports.inviteUser = async (req, res, next) => {
       toUserId: userId,
     });
 
+    await createNotification({
+      userId,
+      type: 'channel_invite_received',
+      category: 'general',
+      title: 'Channel invitation',
+      message: 'You have been invited to join a channel.',
+      link: `/home/tasks?chat=1&channelId=${channelId}`,
+      meta: {
+        channelId,
+        inviteId: invite._id?.toString() || invite.id || '',
+        fromUserId: req.user.id,
+      },
+      dedupKey: `channel-invite:${channelId}:${userId}`,
+    });
+
     const io = req.app.get('io');
     if (io) {
       io.to(`user:${userId}`).emit('channelInvited', {
@@ -264,9 +280,28 @@ exports.acceptInvite = async (req, res, next) => {
       io.to(`channel:${channelId}`).emit('channelMemberJoined', {
         userId: req.user.id,
         channelId,
+        userName: req.user?.name || 'User',
+        avatarURL: req.user?.avatarURL || '',
+        joinedAt: Date.now(),
       });
       io.to(`user:${req.user.id}`).emit('channelJoined', {
         channelId,
+      });
+    }
+
+    const inviterId = result?.invite?.fromUserId?.toString?.() || result?.invite?.fromUserId || '';
+    if (inviterId && inviterId !== req.user.id) {
+      await createNotification({
+        userId: inviterId,
+        type: 'channel_invite_accepted',
+        category: 'general',
+        title: 'Invitation accepted',
+        message: `${req.user?.name || 'A user'} joined #${result?.channel?.name || 'channel'}.`,
+        link: `/home/tasks?chat=1&channelId=${channelId}`,
+        meta: {
+          channelId,
+          joinedUserId: req.user.id,
+        },
       });
     }
 

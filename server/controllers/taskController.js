@@ -8,6 +8,7 @@ const BoardColumn = require('../models/BoardColumn');
 const Card = require('../models/Card');
 const { findUserRoleInTeam } = require('../realtime/roomAuth');
 const { listTeamsForUser } = require('../services/channelService');
+const { createNotification } = require('../services/notificationService');
 
 const toObjectId = (value) => new mongoose.Types.ObjectId(value);
 
@@ -262,6 +263,22 @@ exports.createAssignment = async (req, res, next) => {
       status: 'pending',
     });
 
+    if (assignment.assignedTo.toString() !== userId) {
+      await createNotification({
+        userId: assignment.assignedTo.toString(),
+        type: 'task_assigned',
+        category: 'general',
+        title: 'New task assigned',
+        message: `You were assigned to "${assignment.title}".`,
+        link: '/home/tasks',
+        meta: {
+          assignmentId: assignment._id.toString(),
+          projectId: assignment.projectId.toString(),
+          teamId: assignment.teamId.toString(),
+        },
+      });
+    }
+
     res.status(201).json({
       id: assignment._id.toString(),
       title: assignment.title,
@@ -443,13 +460,13 @@ exports.transferAssignment = async (req, res, next) => {
 
     const assignment = await TaskAssignment.findById(assignmentId).lean();
     if (!assignment) {
-      throw notFound('Görev bulunamadı');
+      throw notFound('Task not found');
     }
     if (assignment.assignedTo.toString() !== userId) {
-      throw forbidden('Bu görev size ait değil');
+      throw forbidden('This task is not assigned to you');
     }
     if (assignment.cardId) {
-      throw badRequest('Görev zaten boarda aktarılmış');
+      throw badRequest('Task is already transferred to board');
     }
 
     const board = await getOrCreateCompanyBoard({ projectId: assignment.projectId });
@@ -458,7 +475,7 @@ exports.transferAssignment = async (req, res, next) => {
       boardId: board._id,
     }).lean();
     if (!column) {
-      throw notFound('Sütun bulunamadı');
+      throw notFound('Column not found');
     }
 
     const [assignee, latestCard] = await Promise.all([
@@ -480,6 +497,14 @@ exports.transferAssignment = async (req, res, next) => {
       ownerId: assignment.assignedTo,
       ownerName: assignee?.name || assignee?.email || '',
       ownerAvatarURL: assignee?.avatarURL || '',
+      assignees: [
+        {
+          userId: assignment.assignedTo,
+          name: assignee?.name || assignee?.email || '',
+          avatarURL: assignee?.avatarURL || '',
+          claimedAt: timestamp,
+        },
+      ],
       createdAt: timestamp,
       updatedAt: timestamp,
     });

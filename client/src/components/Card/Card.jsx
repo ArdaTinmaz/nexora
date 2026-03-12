@@ -10,6 +10,13 @@ const priorityColors = {
   high: { color: '#BEDBB0', label: 'High' },
 };
 
+const maxAssigneesByPriority = {
+  without: 1,
+  low: 1,
+  medium: 2,
+  high: 3,
+};
+
 const toDateObject = (value) => {
   if (!value) return null;
   if (typeof value === 'number') {
@@ -52,6 +59,31 @@ const resolveAvatarUrl = (avatarURL) => {
   return `${API_ORIGIN}/uploads/${avatarURL}`;
 };
 
+const normalizeAssignees = (card) => {
+  if (Array.isArray(card?.assignees) && card.assignees.length) {
+    return card.assignees
+      .map((assignee) => {
+        const userId = String(assignee?.userId || '');
+        if (!userId) return null;
+        return {
+          userId,
+          name: String(assignee?.name || '').trim(),
+          avatarURL: assignee?.avatarURL || '',
+        };
+      })
+      .filter(Boolean);
+  }
+
+  const ownerId = String(card?.ownerId || '');
+  if (!ownerId) return [];
+
+  return [{
+    userId: ownerId,
+    name: String(card?.ownerName || '').trim(),
+    avatarURL: card?.ownerAvatarURL || '',
+  }];
+};
+
 function Card({
   card,
   onEdit,
@@ -68,12 +100,13 @@ function Card({
   if (!card) return null;
 
   const priority = priorityColors[card.priority] || priorityColors.without;
-  const hasOwner = Boolean(card.ownerId);
-  const isOwnedByMe = hasOwner && card.ownerId === currentUserId;
+  const assignees = normalizeAssignees(card);
+  const hasOwner = assignees.length > 0;
+  const isOwnedByMe = assignees.some((assignee) => assignee.userId === currentUserId);
   const canOperateCard = isOwnedByMe || canManage;
-  const canReleaseOwnership = isOwnedByMe || canManage;
-  const ownerName = card.ownerName || (hasOwner ? 'Owner' : 'Unassigned');
-  const ownerAvatar = resolveAvatarUrl(card.ownerAvatarURL);
+  const maxAssignees = maxAssigneesByPriority[card.priority] || 1;
+  const canClaim = Boolean(onToggleOwnership && !isOwnedByMe && assignees.length < maxAssignees);
+  const canReleaseOwnership = Boolean(onToggleOwnership && isOwnedByMe);
 
   const handleCardAction = (event, handler) => {
     event.preventDefault();
@@ -84,7 +117,7 @@ function Card({
   const handleOwnership = (event) => {
     handleCardAction(event, () => {
       if (!onToggleOwnership) return;
-      if (!hasOwner) {
+      if (canClaim) {
         onToggleOwnership(card, 'claim');
         return;
       }
@@ -244,26 +277,36 @@ function Card({
 
         {(onToggleOwnership || hasOwner) && (
           <div className={styles.ownerRow}>
-            <div className={styles.ownerInfo}>
-              {ownerAvatar ? (
-                <img className={styles.ownerAvatar} src={ownerAvatar} alt={ownerName} />
+            <div className={styles.assigneeList}>
+              {assignees.length ? (
+                assignees.map((assignee) => {
+                  const assigneeName = assignee.name || 'User';
+                  const assigneeAvatar = resolveAvatarUrl(assignee.avatarURL);
+                  return (
+                    <div key={assignee.userId} className={styles.assigneeItem} title={assigneeName}>
+                      {assigneeAvatar ? (
+                        <img className={styles.ownerAvatar} src={assigneeAvatar} alt={assigneeName} />
+                      ) : (
+                        <div className={styles.ownerFallback}>
+                          {(assigneeName || '?').slice(0, 1).toUpperCase()}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })
               ) : (
-                <div className={styles.ownerFallback}>
-                  {(ownerName || '?').slice(0, 1).toUpperCase()}
-                </div>
+                <span className={styles.ownerName}>Unassigned</span>
               )}
-              <span className={styles.ownerName}>{ownerName}</span>
             </div>
 
-            {onToggleOwnership && (!hasOwner || isOwnedByMe) && (
+            {(canClaim || canReleaseOwnership) && (
               <button
                 className={styles.ownerActionBtn}
                 type="button"
-                disabled={hasOwner && !canReleaseOwnership}
                 onClick={handleOwnership}
-                title={!hasOwner ? 'Claim card' : canReleaseOwnership ? 'Release card' : 'Owned card'}
+                title={canClaim ? 'Claim card' : 'Release card'}
               >
-                {!hasOwner ? 'Claim' : canReleaseOwnership ? 'Release' : 'Owned'}
+                {canClaim ? 'Claim' : 'Release'}
               </button>
             )}
           </div>

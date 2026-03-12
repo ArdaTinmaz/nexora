@@ -11,6 +11,7 @@ const teamRoutes = require('./routes/teamRoutes');
 const projectRoutes = require('./routes/projectRoutes');
 const adminRoutes = require('./routes/adminRoutes');
 const taskRoutes = require('./routes/taskRoutes');
+const notificationRoutes = require('./routes/notificationRoutes');
 const {
   ensureUploadsDir,
   getPrimaryUploadsDir,
@@ -62,6 +63,7 @@ app.use('/api/teams', teamRoutes);
 app.use('/api/projects', projectRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/tasks', taskRoutes);
+app.use('/api/notifications', notificationRoutes);
 
 app.use((req, res, next) => {
   const error = new Error('Kaynak bulunamadı');

@@ -54,17 +54,25 @@ function CompanyProjectPage({ projects = [], loading = false, onProjectsChange }
 
   const canManage = role === 'team_leader' || role === 'admin';
 
+  const getCardAssigneeNames = useCallback((card) => {
+    if (Array.isArray(card?.assignees) && card.assignees.length) {
+      return card.assignees
+        .map((assignee) => String(assignee?.name || '').trim())
+        .filter(Boolean);
+    }
+    const fallback = String(card?.ownerName || '').trim();
+    return fallback ? [fallback] : [];
+  }, []);
+
   const assigneeOptions = useMemo(() => {
     const names = new Set();
     columns.forEach((column) => {
       (column.cards || []).forEach((card) => {
-        if (card.ownerName && card.ownerName.trim()) {
-          names.add(card.ownerName.trim());
-        }
+        getCardAssigneeNames(card).forEach((name) => names.add(name));
       });
     });
     return Array.from(names).sort((a, b) => a.localeCompare(b));
-  }, [columns]);
+  }, [columns, getCardAssigneeNames]);
 
   const toDateObject = (value) => {
     if (!value) return null;
@@ -98,9 +106,10 @@ function CompanyProjectPage({ projects = [], loading = false, onProjectsChange }
       }
 
       if (cardFilters.assignee && cardFilters.assignee !== 'all') {
+        const assigneeNames = getCardAssigneeNames(card);
         if (cardFilters.assignee === 'unassigned') {
-          if (card.ownerName && String(card.ownerName).trim()) return false;
-        } else if ((card.ownerName || '').trim() !== cardFilters.assignee) {
+          if (assigneeNames.length) return false;
+        } else if (!assigneeNames.includes(cardFilters.assignee)) {
           return false;
         }
       }
@@ -120,7 +129,7 @@ function CompanyProjectPage({ projects = [], loading = false, onProjectsChange }
 
       return true;
     },
-    [cardFilters]
+    [cardFilters, getCardAssigneeNames]
   );
 
   const loadBoard = useCallback(async () => {

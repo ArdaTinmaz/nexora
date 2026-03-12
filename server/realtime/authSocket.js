@@ -28,6 +28,7 @@ const authenticateSocket = async (socket, next) => {
       id: user.id,
       email: user.email,
       name: user.name,
+      avatarURL: user.avatarURL || '',
     };
 
     return next();

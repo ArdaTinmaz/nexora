@@ -1,8 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createSocket } from './socketClient';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { channelApi } from '../api/channelApi';
+import { notificationApi } from '../api/notificationApi';
 import { teamApi } from '../api/teamApi';
 import userApi from '../api/userApi';
+import { getSession } from '../desktop/session';
 import { API_ORIGIN } from '../config';
 import './ChatWidgetLite.css';
 
@@ -57,9 +60,12 @@ const resolveAvatarUrl = (avatarURL) => {
 };
 
 const ChatWidgetLite = () => {
+  const location = useLocation();
+  const navigate = useNavigate();
   const panelRef = useRef(null);
   const toggleRef = useRef(null);
   const [open, setOpen] = useState(false);
+  const [pendingChannelId, setPendingChannelId] = useState('');
   const [unread, setUnread] = useState(0);
   const [channels, setChannels] = useState([]);
   const [invites, setInvites] = useState([]);
@@ -102,6 +108,46 @@ const ChatWidgetLite = () => {
 
   useEffect(() => () => socket.disconnect(), [socket]);
 
+  const loadMessageUnread = useCallback(async () => {
+    try {
+      const data = await notificationApi.list(1);
+      setUnread(Number(data?.messageUnreadCount) || 0);
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error(err);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadMessageUnread();
+    const interval = setInterval(loadMessageUnread, 5000);
+    return () => clearInterval(interval);
+  }, [loadMessageUnread]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    getSession('user')
+      .then((session) => {
+        if (cancelled) return;
+        const sessionUser = session?.user || {};
+        if (sessionUser?.id) {
+          setCurrentUserId(sessionUser.id);
+        }
+        if (sessionUser?.name) {
+          setCurrentUserName(sessionUser.name);
+        }
+        if (sessionUser?.avatarURL) {
+          setCurrentUserAvatarURL(sessionUser.avatarURL);
+        }
+      })
+      .catch(() => {});
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   const teamNameById = useMemo(() => {
     const map = new Map();
     teams.forEach((team) => {
@@ -126,11 +172,34 @@ const ChatWidgetLite = () => {
     return map;
   }, [teamMembers]);
 
+  const channelMemberIds = useMemo(
+    () =>
+      new Set(
+        (selectedChannel?.members || [])
+          .map((member) => String(member?.userId || '').trim())
+          .filter(Boolean)
+      ),
+    [selectedChannel]
+  );
+
+  const channelMembers = useMemo(() => {
+    if (!selectedChannel) return [];
+    if (!channelMemberIds.size) return [];
+    return teamMembers.filter((member) => channelMemberIds.has(member.id));
+  }, [selectedChannel, channelMemberIds, teamMembers]);
+
   const inviteOptions = useMemo(() => {
     const seen = new Set();
     const list = [];
     teamMembers.forEach((member) => {
-      if (!member?.id || member.id === currentUserId || seen.has(member.id)) return;
+      if (
+        !member?.id ||
+        member.id === currentUserId ||
+        seen.has(member.id) ||
+        channelMemberIds.has(member.id)
+      ) {
+        return;
+      }
       seen.add(member.id);
       list.push({
         id: member.id,
@@ -138,7 +207,7 @@ const ChatWidgetLite = () => {
       });
     });
     return list;
-  }, [teamMembers, currentUserId]);
+  }, [teamMembers, currentUserId, channelMemberIds]);
 
   const currentTeamRole = useMemo(() => {
     if (!selectedChannel) return '';
@@ -153,18 +222,18 @@ const ChatWidgetLite = () => {
   );
   const mentionLookup = useMemo(() => {
     const map = new Map();
-    teamMembers.forEach((member) => {
+    channelMembers.forEach((member) => {
       const token = tokenizeMentionName(member.name);
       if (!token) return;
       map.set(token.toLowerCase(), member.name);
     });
     return map;
-  }, [teamMembers]);
+  }, [channelMembers]);
   const mentionMatch = useMemo(() => message.match(/(?:^|\s)@([^\s@]*)$/), [message]);
   const mentionQuery = mentionMatch?.[1]?.toLowerCase() || '';
   const mentionSuggestions = useMemo(() => {
     if (!mentionMatch) return [];
-    return teamMembers
+    return channelMembers
       .filter((member) => member.id !== currentUserId)
       .map((member) => ({
         id: member.id,
@@ -173,7 +242,7 @@ const ChatWidgetLite = () => {
       }))
       .filter((member) => member.token && member.token.toLowerCase().includes(mentionQuery))
       .slice(0, 6);
-  }, [mentionMatch, mentionQuery, teamMembers, currentUserId]);
+  }, [mentionMatch, mentionQuery, channelMembers, currentUserId]);
   const pinnedMessage = useMemo(() => {
     if (!selectedChannel?.pinnedMessageId) return null;
     return (
@@ -228,6 +297,18 @@ const ChatWidgetLite = () => {
   }, [open]);
 
   useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const shouldOpenChat = params.get('chat') === '1';
+    if (!shouldOpenChat) return;
+
+    setOpen(true);
+    const requestedChannelId = params.get('channelId') || '';
+    if (requestedChannelId) {
+      setPendingChannelId(requestedChannelId);
+    }
+  }, [location.search]);
+
+  useEffect(() => {
     if (!open) return undefined;
     const load = async () => {
       try {
@@ -251,6 +332,7 @@ const ChatWidgetLite = () => {
     };
     load();
     setUnread(0);
+    notificationApi.markAllRead('message').catch(() => {});
   }, [open]);
 
   useEffect(() => {
@@ -309,7 +391,6 @@ const ChatWidgetLite = () => {
 
     const handleChannelInvited = (invite) => {
       setInvites((prev) => [...prev, invite]);
-      if (!open) setUnread((count) => count + 1);
     };
 
     const handleChannelUpdated = (channel) => {
@@ -332,11 +413,57 @@ const ChatWidgetLite = () => {
       });
     };
 
+    const handleChannelMemberJoined = (payload) => {
+      const channelId = payload?.channelId;
+      const joinedUserId = payload?.userId;
+      if (!channelId || !joinedUserId) return;
+
+      const upsertMember = (members = []) => {
+        const exists = members.some((member) => member.userId === joinedUserId);
+        if (exists) return members;
+        return [...members, { userId: joinedUserId, role: payload?.role || 'member' }];
+      };
+
+      setChannels((prev) =>
+        prev.map((channel) =>
+          channel.id === channelId
+            ? { ...channel, members: upsertMember(channel.members || []) }
+            : channel
+        )
+      );
+      setSelectedChannel((prev) =>
+        prev?.id === channelId ? { ...prev, members: upsertMember(prev.members || []) } : prev
+      );
+
+      if (selectedChannel?.id === channelId) {
+        const joinedAt = Number(payload?.joinedAt) || Date.now();
+        const userName = payload?.userName || 'A teammate';
+        const avatarURL = payload?.avatarURL || '';
+        const systemId = `system-join-${channelId}-${joinedUserId}-${joinedAt}`;
+        setMessages((prev) => {
+          if (prev.some((entry) => entry.id === systemId)) return prev;
+          return [
+            ...prev,
+            {
+              id: systemId,
+              channelId,
+              type: 'system',
+              message: `${userName} joined the channel.`,
+              joinedUserName: userName,
+              joinedUserAvatarURL: avatarURL,
+              createdAt: joinedAt,
+            },
+          ];
+        });
+      }
+    };
+
     const handleChannelMessage = (payload) => {
       if (selectedChannel && payload.channelId === selectedChannel.id) {
         addMessageUnique(payload);
       }
-      if (!open || !selectedChannel || payload.channelId !== selectedChannel.id) {
+      const isOwnMessage = payload?.senderId && payload.senderId === currentUserId;
+      if (!isOwnMessage && (!open || !selectedChannel || payload.channelId !== selectedChannel.id)) {
         setUnread((count) => count + 1);
       }
     };
@@ -357,7 +484,7 @@ const ChatWidgetLite = () => {
     socket.on('channelInvited', handleChannelInvited);
     socket.on('channelUpdated', handleChannelUpdated);
     socket.on('channelDeleted', handleChannelDeleted);
-    socket.on('channelMemberJoined', () => {});
+    socket.on('channelMemberJoined', handleChannelMemberJoined);
     socket.on('receiveChannelMessage', handleChannelMessage);
     socket.on('channelMessageUpdated', handleChannelMessageUpdated);
     socket.on('channelMessageDeleted', handleChannelMessageDeleted);
@@ -367,13 +494,14 @@ const ChatWidgetLite = () => {
       socket.off('channelInvited', handleChannelInvited);
       socket.off('channelUpdated', handleChannelUpdated);
       socket.off('channelDeleted', handleChannelDeleted);
+      socket.off('channelMemberJoined', handleChannelMemberJoined);
       socket.off('receiveChannelMessage', handleChannelMessage);
       socket.off('channelMessageUpdated', handleChannelMessageUpdated);
       socket.off('channelMessageDeleted', handleChannelMessageDeleted);
     };
-  }, [socket, open, selectedChannel, addMessageUnique, upsertMessage]);
+  }, [socket, open, selectedChannel, addMessageUnique, upsertMessage, currentUserId]);
 
-  const joinChannel = async (channel) => {
+  const joinChannel = useCallback(async (channel) => {
     if (!channel || !socket) return;
     setSelectedChannel(channel);
     setMessageLimit(50);
@@ -412,7 +540,31 @@ const ChatWidgetLite = () => {
       // eslint-disable-next-line no-console
       console.error(err);
     }
-  };
+  }, [socket]);
+
+  useEffect(() => {
+    if (!open || !pendingChannelId || channels.length === 0) return;
+
+    const requested = channels.find((channel) => channel.id === pendingChannelId);
+    if (!requested) return;
+
+    joinChannel(requested);
+    setPendingChannelId('');
+
+    const params = new URLSearchParams(location.search);
+    if (params.get('chat') === '1' || params.get('channelId')) {
+      params.delete('chat');
+      params.delete('channelId');
+      const nextSearch = params.toString();
+      navigate(
+        {
+          pathname: location.pathname,
+          search: nextSearch ? `?${nextSearch}` : '',
+        },
+        { replace: true }
+      );
+    }
+  }, [open, pendingChannelId, channels, joinChannel, navigate, location.pathname, location.search]);
 
   const sendMessage = async () => {
     if (!message.trim() || !selectedChannel || !socket) return;
@@ -471,8 +623,32 @@ const ChatWidgetLite = () => {
   };
 
   const acceptInvite = async (invite) => {
+    if (!invite?.channelId) return;
     try {
-      await channelApi.acceptInvite(invite.channelId);
+      if (socket) {
+        if (!socket.connected) {
+          socket.connect();
+          await new Promise((resolve) => {
+            socket.once('connect', resolve);
+            setTimeout(resolve, 1000);
+          });
+        }
+        if (socket.connected) {
+          await new Promise((resolve, reject) => {
+            socket.emit('acceptChannelInvite', { channelId: invite.channelId }, (res) => {
+              if (res?.error) {
+                reject(new Error(res.error));
+                return;
+              }
+              resolve(res);
+            });
+          });
+        } else {
+          await channelApi.acceptInvite(invite.channelId);
+        }
+      } else {
+        await channelApi.acceptInvite(invite.channelId);
+      }
       setInvites((prev) => prev.filter((item) => item.channelId !== invite.channelId));
       const channelList = await channelApi.list();
       setChannels(channelList || []);
@@ -770,7 +946,9 @@ const ChatWidgetLite = () => {
         aria-label="Open chat"
       >
         💬
-        {unread > 0 && <span className="chat-widget-lite-badge">{unread}</span>}
+        {unread > 0 && (
+          <span className="chat-widget-lite-badge">{unread > 99 ? '99+' : unread}</span>
+        )}
       </button>
       {open && (
         <div className="chat-widget-lite-panel" ref={panelRef}>
@@ -970,6 +1148,25 @@ const ChatWidgetLite = () => {
                     </div>
                   )}
                   {messages.map((entry, messageIndex) => {
+                    if (entry?.type === 'system') {
+                      const joinedName = entry.joinedUserName || 'A teammate';
+                      const joinedAvatar = resolveAvatarUrl(entry.joinedUserAvatarURL || '');
+                      return (
+                        <div key={entry.id || `system-${entry.createdAt}`} className="chat-widget-lite-system-message">
+                          <span className="chat-widget-lite-system-avatar" title={joinedName}>
+                            {joinedAvatar ? (
+                              <img src={joinedAvatar} alt={joinedName} />
+                            ) : (
+                              <span>{getInitials(joinedName)}</span>
+                            )}
+                          </span>
+                          <span className="chat-widget-lite-system-text">
+                            <strong>{joinedName}</strong> joined the channel.
+                          </span>
+                        </div>
+                      );
+                    }
+
                     const isOwn = entry.senderId === currentUserId;
                     const messageTimestamp = entry.createdAt || Date.now();
                     const isDeleted = Boolean(entry.isDeleted) || entry.message === DELETED_MESSAGE_TEXT;

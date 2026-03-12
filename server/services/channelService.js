@@ -3,8 +3,10 @@ const Channel = require('../models/Channel');
 const ChannelMessage = require('../models/ChannelMessage');
 const ChannelInvite = require('../models/ChannelInvite');
 const Team = require('../models/Team');
+const UserModel = require('../models/User');
 const AdminUserProfile = require('../models/AdminUserProfile');
 const { findUserRoleInTeam } = require('../realtime/roomAuth');
+const { createNotificationsForUsers } = require('./notificationService');
 
 const DELETED_MESSAGE_TEXT = 'This message was deleted.';
 
@@ -26,6 +28,18 @@ const mapChannel = (channel, pinnedMessage = null) => ({
   name: channel.name,
   teamId: channel.teamId.toString(),
   createdBy: channel.createdBy.toString(),
+  members: Array.isArray(channel.members)
+    ? channel.members
+        .map((member) => {
+          const userId = member?.userId ? member.userId.toString() : '';
+          if (!userId) return null;
+          return {
+            userId,
+            role: member?.role || '',
+          };
+        })
+        .filter(Boolean)
+    : [],
   pinnedMessageId: channel.pinnedMessageId ? channel.pinnedMessageId.toString() : null,
   pinnedBy: channel.pinnedBy ? channel.pinnedBy.toString() : null,
   pinnedAt: channel.pinnedAt || null,
@@ -36,6 +50,21 @@ const getAdminRole = async (userId) => {
   if (!mongoose.Types.ObjectId.isValid(userId)) return '';
   const profile = await AdminUserProfile.findOne({ userId: toObjectId(userId) }).lean();
   return String(profile?.role || '').toLowerCase();
+};
+
+const parseMentionTokens = (message) => {
+  const tokens = new Set();
+  const input = String(message || '');
+  const regex = /@([a-zA-Z0-9_.-]+)/g;
+  let match = regex.exec(input);
+
+  while (match) {
+    const token = String(match[1] || '').trim().toLowerCase();
+    if (token) tokens.add(token);
+    match = regex.exec(input);
+  }
+
+  return [...tokens];
 };
 
 const ensureTeamAndRole = async (teamId, userId) => {
@@ -205,7 +234,7 @@ const getChannelMessages = async (channelId, limit = 50) => {
 };
 
 const saveChannelMessage = async ({ channelId, userId, message }) => {
-  await ensureChannelMember(channelId, userId);
+  const channel = await ensureChannelMember(channelId, userId);
 
   const now = Date.now();
   const entry = await ChannelMessage.create({
@@ -218,7 +247,74 @@ const saveChannelMessage = async ({ channelId, userId, message }) => {
     deletedAt: null,
   });
 
-  return mapChannelMessage(entry);
+  const mappedEntry = mapChannelMessage(entry);
+  const memberUserIds = [
+    ...new Set((channel?.members || []).map((member) => member.userId?.toString()).filter(Boolean)),
+  ];
+
+  const recipients = memberUserIds.filter((memberId) => memberId !== userId);
+  if (recipients.length) {
+    const sender = await UserModel.model.findById(toObjectId(userId)).lean();
+    const senderName = sender?.name || sender?.email || 'A teammate';
+    const preview = String(message || '').replace(/\s+/g, ' ').trim().slice(0, 140);
+
+    await createNotificationsForUsers(recipients, {
+      type: 'channel_message',
+      category: 'message',
+      title: `New message in #${channel.name}`,
+      message: preview ? `${senderName}: ${preview}` : `${senderName} sent a message.`,
+      link: `/home/tasks?chat=1&channelId=${channelId.toString()}`,
+      meta: {
+        channelId: channelId.toString(),
+        messageId: mappedEntry.id,
+        senderId: userId,
+      },
+    });
+  }
+
+  const mentionTokens = parseMentionTokens(message);
+  if (mentionTokens.length && memberUserIds.length) {
+    const users = await UserModel.model
+      .find({ _id: { $in: memberUserIds.map((id) => toObjectId(id)) } })
+      .lean();
+
+    const tokenToUserId = new Map();
+    users.forEach((user) => {
+      const token = String(user?.name || '')
+        .trim()
+        .split(/\s+/)[0]
+        ?.toLowerCase();
+      if (!token || tokenToUserId.has(token)) return;
+      tokenToUserId.set(token, user._id.toString());
+    });
+
+    const mentionRecipients = [
+      ...new Set(
+        mentionTokens
+          .map((token) => tokenToUserId.get(token))
+          .filter(Boolean)
+          .filter((memberId) => memberId !== userId)
+      ),
+    ];
+
+    if (mentionRecipients.length) {
+      await createNotificationsForUsers(mentionRecipients, {
+        type: 'channel_mention',
+        category: 'general',
+        title: 'You were mentioned',
+        message: `You were mentioned in #${channel.name}.`,
+        link: `/home/tasks?chat=1&channelId=${channelId.toString()}`,
+        meta: {
+          channelId: channelId.toString(),
+          messageId: mappedEntry.id,
+          senderId: userId,
+        },
+        dedupKey: `mention:${mappedEntry.id}`,
+      });
+    }
+  }
+
+  return mappedEntry;
 };
 
 const updateChannelMessage = async ({ channelId, messageId, userId, message }) => {
