@@ -32,6 +32,14 @@
     ],
     "extraResources": [
       {
+        "from": "client/public/favicon.ico",
+        "to": "app-icon.ico"
+      },
+      {
+        "from": "client/public/icon.PNG",
+        "to": "app-icon.png"
+      },
+      {
         "from": "server",
         "to": "server",
         "filter": [
@@ -53,12 +61,15 @@
       }
     ],
     "win": {
+      "icon": "client/public/favicon.ico",
       "target": [
         "nsis"
-      ],
-      "signAndEditExecutable": false
+      ]
     },
     "nsis": {
+      "installerIcon": "client/public/favicon.ico",
+      "uninstallerIcon": "client/public/favicon.ico",
+      "installerHeaderIcon": "client/public/favicon.ico",
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,

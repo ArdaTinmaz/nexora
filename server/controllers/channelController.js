@@ -5,6 +5,7 @@ const {
   deleteChannel: deleteChannelService,
   getChannelMessages,
   saveChannelMessage,
+  saveChannelSystemMessage,
   updateChannelMessage,
   deleteChannelMessage,
   pinChannelMessage,
@@ -12,9 +13,12 @@ const {
   createInvite,
   listInvitesForUser,
   acceptInvite,
+  leaveChannel: leaveChannelService,
+  removeChannelMember,
   ensureChannelMember,
 } = require('../services/channelService');
 const { createNotification } = require('../services/notificationService');
+const UserModel = require('../models/User');
 
 exports.getChannels = async (req, res, next) => {
   try {
@@ -253,6 +257,7 @@ exports.inviteUser = async (req, res, next) => {
       io.to(`user:${userId}`).emit('channelInvited', {
         id: invite._id?.toString() || invite.id,
         channelId,
+        channelName: invite.channelName || '',
         fromUserId: req.user.id,
       });
     }
@@ -260,6 +265,7 @@ exports.inviteUser = async (req, res, next) => {
     res.status(201).json({
       id: invite._id?.toString() || invite.id,
       channelId,
+      channelName: invite.channelName || '',
       fromUserId: req.user.id,
       toUserId: userId,
       status: invite.status,
@@ -274,16 +280,31 @@ exports.acceptInvite = async (req, res, next) => {
   try {
     const { channelId } = req.params;
     const result = await acceptInvite({ channelId, userId: req.user.id });
+    const joinedAt = Date.now();
+    const joinedUserName = req.user?.name || 'User';
+    const joinedUserAvatarURL = req.user?.avatarURL || '';
+    const systemMessage = await saveChannelSystemMessage({
+      channelId,
+      userId: req.user.id,
+      message: `${joinedUserName} joined.`,
+      systemEvent: 'member_joined',
+      systemMeta: {
+        joinedUserId: req.user.id,
+        joinedUserName,
+        joinedUserAvatarURL,
+      },
+    });
 
     const io = req.app.get('io');
     if (io) {
       io.to(`channel:${channelId}`).emit('channelMemberJoined', {
         userId: req.user.id,
         channelId,
-        userName: req.user?.name || 'User',
-        avatarURL: req.user?.avatarURL || '',
-        joinedAt: Date.now(),
+        userName: joinedUserName,
+        avatarURL: joinedUserAvatarURL,
+        joinedAt,
       });
+      io.to(`channel:${channelId}`).emit('receiveChannelMessage', systemMessage);
       io.to(`user:${req.user.id}`).emit('channelJoined', {
         channelId,
       });
@@ -311,6 +332,139 @@ exports.acceptInvite = async (req, res, next) => {
         id: result.invite._id?.toString() || result.invite.id,
         status: result.invite.status,
       },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+exports.leaveChannel = async (req, res, next) => {
+  try {
+    const { channelId } = req.params;
+    const leftAt = Date.now();
+    const leftUserName = req.user?.name || 'User';
+    const leftUserAvatarURL = req.user?.avatarURL || '';
+
+    const result = await leaveChannelService({ channelId, userId: req.user.id });
+    const systemMessage = await saveChannelSystemMessage({
+      channelId,
+      userId: req.user.id,
+      message: `${leftUserName} left.`,
+      systemEvent: 'member_left',
+      systemMeta: {
+        leftUserId: req.user.id,
+        leftUserName,
+        leftUserAvatarURL,
+      },
+      skipMembershipCheck: true,
+    });
+
+    const io = req.app.get('io');
+    if (io) {
+      io.to(`channel:${channelId}`).emit('receiveChannelMessage', systemMessage);
+      io.to(`channel:${channelId}`).emit('channelMemberLeft', {
+        channelId,
+        channelName: result.channelName,
+        userId: req.user.id,
+        userName: leftUserName,
+        avatarURL: leftUserAvatarURL,
+        reason: 'left',
+        leftAt,
+      });
+      io.to(`user:${req.user.id}`).emit('channelRemovedForUser', {
+        channelId,
+        channelName: result.channelName,
+        reason: 'left',
+        message: `You left #${result.channelName}.`,
+      });
+      io.in(`user:${req.user.id}`).socketsLeave(`channel:${channelId}`);
+    }
+
+    res.json({
+      ok: true,
+      channelId,
+      channelName: result.channelName,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+exports.removeMember = async (req, res, next) => {
+  try {
+    const { channelId, userId } = req.params;
+    const removedAt = Date.now();
+    const actorName = req.user?.name || 'User';
+    const actorRoleLabel = 'team lead';
+
+    const targetUser = await UserModel.findUserById(userId);
+    const targetName = targetUser?.name || 'User';
+    const targetAvatarURL = targetUser?.avatarURL || '';
+    const result = await removeChannelMember({
+      channelId,
+      actorUserId: req.user.id,
+      targetUserId: userId,
+    });
+
+    const systemMessage = await saveChannelSystemMessage({
+      channelId,
+      userId: req.user.id,
+      message: `${actorName} ${result.actorRoleLabel || actorRoleLabel} removed ${targetName}.`,
+      systemEvent: 'member_removed',
+      systemMeta: {
+        removedUserId: userId,
+        removedUserName: targetName,
+        removedByUserId: req.user.id,
+        removedByName: actorName,
+        removedByRole: result.actorRole || 'team_leader',
+      },
+    });
+
+    const io = req.app.get('io');
+    if (io) {
+      io.to(`channel:${channelId}`).emit('receiveChannelMessage', systemMessage);
+      io.to(`channel:${channelId}`).emit('channelMemberLeft', {
+        channelId,
+        channelName: result.channelName,
+        userId,
+        userName: targetName,
+        avatarURL: targetAvatarURL,
+        reason: 'removed',
+        removedByUserId: req.user.id,
+        removedByName: actorName,
+        removedByRole: result.actorRole || 'team_leader',
+        removedAt,
+      });
+      io.to(`user:${userId}`).emit('channelRemovedForUser', {
+        channelId,
+        channelName: result.channelName,
+        reason: 'removed',
+        removedByUserId: req.user.id,
+        removedByName: actorName,
+        removedByRole: result.actorRole || 'team_leader',
+        message: `You were removed from #${result.channelName}.`,
+      });
+      io.in(`user:${userId}`).socketsLeave(`channel:${channelId}`);
+    }
+
+    await createNotification({
+      userId,
+      type: 'channel_removed',
+      category: 'general',
+      title: 'Removed from channel',
+      message: `You were removed from #${result.channelName}.`,
+      link: '/home/tasks?chat=1',
+      meta: {
+        channelId,
+        removedByUserId: req.user.id,
+      },
+    });
+
+    res.json({
+      ok: true,
+      channelId,
+      channelName: result.channelName,
+      removedUserId: userId,
     });
   } catch (error) {
     next(error);

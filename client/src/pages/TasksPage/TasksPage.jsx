@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { useLocation } from 'react-router-dom';
 import styles from './TasksPage.module.css';
 import { taskApi } from '../../api/taskApi';
 import { teamApi } from '../../api/teamApi';
@@ -47,6 +48,7 @@ const toDateObject = (value) => {
 };
 
 function TasksPage({ companyProjects = [] }) {
+  const location = useLocation();
   const [tasks, setTasks] = useState([]);
   const [loading, setLoading] = useState(true);
   const [leadTeams, setLeadTeams] = useState([]);
@@ -294,6 +296,15 @@ function TasksPage({ companyProjects = [] }) {
       }));
     }
   }, [projectOptions, teamsForProject, createDraft.projectId, createDraft.teamId]);
+
+  useEffect(() => {
+    if (leadTeams.length === 0) return;
+    const searchParams = new URLSearchParams(location.search);
+    if (searchParams.get('new') === '1') {
+      setStatusMessage('');
+      setIsAssignModalOpen(true);
+    }
+  }, [leadTeams.length, location.search]);
 
   const handleCreateTask = async (event) => {
     event.preventDefault();

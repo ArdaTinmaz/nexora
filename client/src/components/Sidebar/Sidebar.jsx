@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import styles from './Sidebar.module.css';
 import NewBoardModal from '../NewBoardModal/NewBoardModal';
@@ -6,7 +6,7 @@ import EditBoardModal from '../EditBoardModal/EditBoardModal';
 import NeedHelpModal from '../NeedHelpModal/NeedHelpModal';
 import { boardApi } from '../../api/boardApi';
 import ConfirmModal from '../ConfirmModal/ConfirmModal';
-import { spriteHref } from '../../utils/assets';
+import { assetUrl, spriteHref } from '../../utils/assets';
 
 const iconMap = {
   'project': 'icon-Project',
@@ -137,16 +137,36 @@ function Sidebar({
     }
   };
 
+  useEffect(() => {
+    const openCreateBoard = () => setIsNewBoardModalOpen(true);
+    const openNeedHelp = () => setIsNeedHelpModalOpen(true);
+
+    window.addEventListener('nexora:create-board', openCreateBoard);
+    window.addEventListener('nexora:need-help', openNeedHelp);
+
+    return () => {
+      window.removeEventListener('nexora:create-board', openCreateBoard);
+      window.removeEventListener('nexora:need-help', openNeedHelp);
+    };
+  }, []);
+
   return (
     <>
       <aside className={styles.sidebar}>
         {/* Logo */}
-        <div className={styles.logoContainer}>
-          <svg className={styles.logoIcon} width="32" height="32" viewBox="0 0 32 32">
-            <use href={spriteHref('icon-icon')}></use>
-          </svg>
+        <button
+          type="button"
+          className={styles.logoContainer}
+          onClick={() => navigate('/home')}
+          aria-label="Go to dashboard"
+        >
+          <img
+            className={styles.logoIcon}
+            src={assetUrl('icon.PNG')}
+            alt="Nexora icon"
+          />
           <span className={styles.logoText}>Nexora</span>
-        </div>
+        </button>
 
         {/* Projects section */}
         <div className={styles.boardsSection}>

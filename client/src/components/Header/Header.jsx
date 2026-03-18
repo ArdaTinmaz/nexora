@@ -21,6 +21,7 @@ function Header() {
   const [unreadCount, setUnreadCount] = useState(0);
   const [actionId, setActionId] = useState('');
   const isTasksActive = location.pathname.includes('/home/tasks');
+  const isHomeActive = location.pathname === '/home' || location.pathname === '/home/';
 
   const avatarSrc = () => {
     if (user?.avatarURL) {
@@ -190,6 +191,14 @@ function Header() {
               onClick={() => navigate('/home/tasks')}
             >
               Tasks
+            </button>
+            <span className={styles.headerDivider} aria-hidden="true" />
+            <button
+              className={`${styles.tasksBtn} ${isHomeActive ? styles.tasksActive : ''}`}
+              type="button"
+              onClick={() => navigate('/home')}
+            >
+              Home
             </button>
             <span className={styles.profileDivider} aria-hidden="true" />
             <button 

@@ -13,21 +13,31 @@
 .logoContainer {
   display: flex;
   align-items: center;
-  gap: 8px;
-  margin-bottom: 32px;
-  padding-left: 14px;
+  gap: 12px;
+  margin-bottom: 36px;
+  padding: 0 0 0 14px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  width: fit-content;
+  transition: opacity 0.2s ease;
+}
+
+.logoContainer:hover {
+  opacity: 0.9;
 }
 
 .logoIcon {
-  width: 32px;
-  height: 32px;
+  width: 48px;
+  height: 48px;
   flex-shrink: 0;
+  object-fit: contain;
 }
 
 .logoText {
   font-family: var(--font-family);
   font-weight: 600;
-  font-size: 16px;
+  font-size: 20px;
   letter-spacing: -0.02em;
   color: var(--text-white);
 }

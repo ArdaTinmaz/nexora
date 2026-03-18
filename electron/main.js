@@ -16,12 +16,30 @@ const gotSingleInstanceLock = app.requestSingleInstanceLock();
 if (!gotSingleInstanceLock) {
   app.quit();
 } else {
+  if (process.platform === 'win32') {
+    app.setAppUserModelId('com.nexora.desktop');
+  }
+
   deepLinks.captureInitialRoute();
   deepLinks.registerDeepLinkHandlers();
   const createWindow = () => {
+    const iconPath = isDev
+      ? path.join(
+          __dirname,
+          '..',
+          'client',
+          'public',
+          process.platform === 'win32' ? 'favicon.ico' : 'icon.PNG'
+        )
+      : path.join(
+          process.resourcesPath,
+          process.platform === 'win32' ? 'app-icon.ico' : 'app-icon.png'
+        );
+
     const win = new BrowserWindow({
       width: 1280,
       height: 800,
+      icon: iconPath,
       webPreferences: {
         preload: path.join(__dirname, 'preload.js'),
         contextIsolation: true,

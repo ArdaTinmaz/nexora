@@ -11,12 +11,18 @@ const { createNotificationsForUsers } = require('./notificationService');
 const DELETED_MESSAGE_TEXT = 'This message was deleted.';
 
 const toObjectId = (id) => new mongoose.Types.ObjectId(id);
+const normalizeRoleLabel = (role) => (role === 'team_leader' ? 'team lead' : String(role || 'member'));
 
 const mapChannelMessage = (msg) => ({
   id: msg._id.toString(),
   channelId: msg.channelId.toString(),
   senderId: msg.senderId.toString(),
   message: msg.message,
+  type: msg.type || 'user',
+  systemEvent: msg.systemEvent || '',
+  systemMeta: msg.systemMeta || null,
+  joinedUserName: msg.systemMeta?.joinedUserName || '',
+  joinedUserAvatarURL: msg.systemMeta?.joinedUserAvatarURL || '',
   createdAt: msg.createdAt,
   updatedAt: msg.updatedAt || msg.createdAt,
   isDeleted: Boolean(msg.isDeleted),
@@ -317,6 +323,36 @@ const saveChannelMessage = async ({ channelId, userId, message }) => {
   return mappedEntry;
 };
 
+const saveChannelSystemMessage = async ({
+  channelId,
+  userId,
+  message,
+  systemEvent = '',
+  systemMeta = null,
+  skipMembershipCheck = false,
+}) => {
+  if (!skipMembershipCheck) {
+    await ensureChannelMember(channelId, userId);
+  }
+
+  const now = Date.now();
+  const normalizedMessage = String(message || '').trim() || 'A teammate joined the channel.';
+  const entry = await ChannelMessage.create({
+    channelId: toObjectId(channelId),
+    senderId: toObjectId(userId),
+    message: normalizedMessage,
+    type: 'system',
+    systemEvent: String(systemEvent || ''),
+    systemMeta: systemMeta && typeof systemMeta === 'object' ? systemMeta : null,
+    createdAt: now,
+    updatedAt: now,
+    isDeleted: false,
+    deletedAt: null,
+  });
+
+  return mapChannelMessage(entry);
+};
+
 const updateChannelMessage = async ({ channelId, messageId, userId, message }) => {
   await ensureChannelMember(channelId, userId);
 
@@ -340,6 +376,12 @@ const updateChannelMessage = async ({ channelId, messageId, userId, message }) =
   if (entry.senderId.toString() !== userId) {
     const error = new Error('Bu mesajı düzenleyemezsiniz');
     error.statusCode = 403;
+    throw error;
+  }
+
+  if (entry.type === 'system') {
+    const error = new Error('Sistem mesajları düzenlenemez');
+    error.statusCode = 400;
     throw error;
   }
 
@@ -382,6 +424,12 @@ const deleteChannelMessage = async ({ channelId, messageId, userId }) => {
     throw error;
   }
 
+  if (entry.type === 'system') {
+    const error = new Error('Sistem mesajları silinemez');
+    error.statusCode = 400;
+    throw error;
+  }
+
   if (!entry.isDeleted) {
     const now = Date.now();
     entry.message = DELETED_MESSAGE_TEXT;
@@ -418,6 +466,12 @@ const pinChannelMessage = async ({ channelId, messageId, userId }) => {
   if (!message) {
     const error = new Error('Mesaj bulunamadı');
     error.statusCode = 404;
+    throw error;
+  }
+
+  if (message.type === 'system') {
+    const error = new Error('Sistem mesajları sabitlenemez');
+    error.statusCode = 400;
     throw error;
   }
 
@@ -474,6 +528,16 @@ const addMemberToChannel = async ({ channelId, userId, role }) => {
   return channel;
 };
 
+const removeMemberFromChannel = async ({ channelId, userId }) => {
+  const channel = await Channel.findOneAndUpdate(
+    { _id: channelId, 'members.userId': toObjectId(userId) },
+    { $pull: { members: { userId: toObjectId(userId) } } },
+    { new: true }
+  ).lean();
+
+  return channel;
+};
+
 const createInvite = async ({ channelId, fromUserId, toUserId }) => {
   const channel = await Channel.findById(channelId).lean();
   if (!channel) {
@@ -485,13 +549,25 @@ const createInvite = async ({ channelId, fromUserId, toUserId }) => {
   // only team leader can invite
   await ensureLeader(channel.teamId, fromUserId);
 
+  const alreadyMember = (channel.members || []).some(
+    (member) => member?.userId?.toString() === String(toUserId)
+  );
+  if (alreadyMember) {
+    const error = new Error('User is already in the channel.');
+    error.statusCode = 400;
+    throw error;
+  }
+
   const existing = await ChannelInvite.findOne({
     channelId,
     toUserId,
     status: 'pending',
   }).lean();
   if (existing) {
-    return existing;
+    return {
+      ...existing,
+      channelName: channel.name,
+    };
   }
 
   const invite = await ChannelInvite.create({
@@ -502,7 +578,10 @@ const createInvite = async ({ channelId, fromUserId, toUserId }) => {
     createdAt: Date.now(),
   });
 
-  return invite.toObject();
+  return {
+    ...invite.toObject(),
+    channelName: channel.name,
+  };
 };
 
 const listInvitesForUser = async (userId) => {
@@ -511,9 +590,20 @@ const listInvitesForUser = async (userId) => {
     status: 'pending',
   }).lean();
 
+  const channelIds = [...new Set(invites.map((invite) => invite.channelId?.toString()).filter(Boolean))];
+  const channels = channelIds.length
+    ? await Channel.find({ _id: { $in: channelIds.map((id) => toObjectId(id)) } })
+        .select('name')
+        .lean()
+    : [];
+  const channelNameById = new Map(
+    channels.map((channel) => [channel._id.toString(), channel.name || channel._id.toString()])
+  );
+
   return invites.map((invite) => ({
     id: invite._id.toString(),
     channelId: invite.channelId.toString(),
+    channelName: channelNameById.get(invite.channelId.toString()) || invite.channelId.toString(),
     fromUserId: invite.fromUserId.toString(),
     toUserId: invite.toUserId.toString(),
     status: invite.status,
@@ -560,6 +650,82 @@ const acceptInvite = async ({ channelId, userId }) => {
   };
 };
 
+const leaveChannel = async ({ channelId, userId }) => {
+  const channel = await ensureChannelMember(channelId, userId);
+  const member = (channel.members || []).find((entry) => entry?.userId?.toString() === String(userId));
+
+  const updated = await removeMemberFromChannel({ channelId, userId });
+  if (!updated) {
+    const error = new Error('Kanal üyeliği güncellenemedi');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  return {
+    channel: mapChannel(updated),
+    channelName: updated.name || channel.name || '',
+    teamId: updated.teamId?.toString() || channel.teamId?.toString() || '',
+    userRole: member?.role || '',
+  };
+};
+
+const removeChannelMember = async ({ channelId, actorUserId, targetUserId }) => {
+  if (String(actorUserId) === String(targetUserId)) {
+    const error = new Error('Use leave action to leave the channel.');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  if (!mongoose.Types.ObjectId.isValid(channelId)) {
+    const error = new Error('Geçersiz kanal');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const channel = await Channel.findById(channelId).lean();
+  if (!channel) {
+    const error = new Error('Kanal bulunamadı');
+    error.statusCode = 404;
+    throw error;
+  }
+
+  const actorMember = (channel.members || []).find(
+    (entry) => entry?.userId?.toString() === String(actorUserId)
+  );
+  if (!actorMember) {
+    const error = new Error('Kanal erişimi yok');
+    error.statusCode = 403;
+    throw error;
+  }
+
+  await ensureLeader(channel.teamId, actorUserId);
+
+  const targetMember = (channel.members || []).find(
+    (entry) => entry?.userId?.toString() === String(targetUserId)
+  );
+  if (!targetMember) {
+    const error = new Error('User is not in channel.');
+    error.statusCode = 404;
+    throw error;
+  }
+
+  const updated = await removeMemberFromChannel({ channelId, userId: targetUserId });
+  if (!updated) {
+    const error = new Error('Kanal üyeliği güncellenemedi');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  return {
+    channel: mapChannel(updated),
+    channelName: updated.name || channel.name || '',
+    teamId: updated.teamId?.toString() || channel.teamId?.toString() || '',
+    actorRole: actorMember.role || '',
+    actorRoleLabel: normalizeRoleLabel(actorMember.role),
+    targetRole: targetMember.role || '',
+  };
+};
+
 module.exports = {
   listTeamsForUser,
   listChannelsForUser,
@@ -570,6 +736,7 @@ module.exports = {
   ensureChannelMember,
   getChannelMessages,
   saveChannelMessage,
+  saveChannelSystemMessage,
   updateChannelMessage,
   deleteChannelMessage,
   pinChannelMessage,
@@ -577,5 +744,7 @@ module.exports = {
   createInvite,
   listInvitesForUser,
   acceptInvite,
+  leaveChannel,
+  removeChannelMember,
   ensureTeamAndRole,
 };

@@ -49,4 +49,12 @@ export const channelApi = {
     request(`/channels/${channelId}/accept`, {
       method: 'POST',
     }),
+  leaveChannel: (channelId) =>
+    request(`/channels/${channelId}/leave`, {
+      method: 'POST',
+    }),
+  removeMember: (channelId, userId) =>
+    request(`/channels/${channelId}/members/${userId}`, {
+      method: 'DELETE',
+    }),
 };

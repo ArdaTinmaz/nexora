@@ -1,0 +1,296 @@
+.dashboard {
+  height: 100%;
+  overflow: hidden;
+  padding: 20px 24px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  background: radial-gradient(circle at 10% 10%, rgba(190, 219, 176, 0.08), transparent 42%),
+    #1f1f1f;
+}
+
+.hero {
+  flex-shrink: 0;
+}
+
+.title {
+  margin: 0;
+  font-size: 30px;
+  color: #fff;
+  font-weight: 600;
+  letter-spacing: -0.03em;
+}
+
+.subtitle {
+  margin: 8px 0 0;
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 14px;
+  max-width: 720px;
+}
+
+.todayGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  flex-shrink: 0;
+}
+
+.statCard {
+  background: #151515;
+  border: 1px solid #2f3b28;
+  border-radius: 12px;
+  padding: 16px;
+}
+
+.statLabel {
+  margin: 0;
+  color: rgba(255, 255, 255, 0.62);
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.statValue {
+  margin: 8px 0 0;
+  color: #fff;
+  font-size: 28px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+.statDanger {
+  color: #f87171;
+}
+
+.statSuccess {
+  color: #86efac;
+}
+
+.mainLayout {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr);
+  gap: 12px;
+}
+
+.leftPanel {
+  min-height: 0;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  gap: 12px;
+}
+
+.rightPanel {
+  min-height: 0;
+}
+
+.card {
+  background: #151515;
+  border: 1px solid #2f3b28;
+  border-radius: 12px;
+  padding: 16px;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.quickCard {
+  flex-shrink: 0;
+}
+
+.upcomingCard {
+  min-height: 0;
+}
+
+.continueCard {
+  flex-shrink: 0;
+}
+
+.activityCard {
+  height: 100%;
+  min-height: 0;
+}
+
+.cardHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.cardHeader h2 {
+  margin: 0;
+  font-size: 16px;
+  color: #fff;
+  font-weight: 600;
+}
+
+.empty {
+  margin: 10px 0 0;
+  color: rgba(255, 255, 255, 0.55);
+  font-size: 13px;
+}
+
+.list {
+  margin: 0;
+  padding: 0 2px 0 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.scrollAreaUpcoming {
+  min-height: 0;
+  overflow-y: auto;
+  max-height: 230px;
+  padding-right: 4px;
+}
+
+.scrollAreaActivity {
+  min-height: 0;
+  overflow-y: auto;
+  padding-right: 4px;
+  flex: 1;
+}
+
+.listItem,
+.activityItem {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  background: #1f1f1f;
+  border: 1px solid rgba(190, 219, 176, 0.16);
+  border-radius: 10px;
+  padding: 10px 12px;
+}
+
+.activityItem {
+  align-items: flex-start;
+}
+
+.itemTitle {
+  margin: 0;
+  color: #fff;
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.itemMeta {
+  margin: 3px 0 0;
+  color: rgba(255, 255, 255, 0.64);
+  font-size: 12px;
+}
+
+.timeMeta {
+  margin: 5px 0 0;
+  color: rgba(255, 255, 255, 0.45);
+  font-size: 11px;
+}
+
+.itemDate {
+  color: var(--accent-green);
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.actions button,
+.openBtn {
+  border: 1px solid rgba(190, 219, 176, 0.4);
+  background: rgba(190, 219, 176, 0.12);
+  color: #d9f2cf;
+  border-radius: 9px;
+  padding: 10px 12px;
+  font-size: 13px;
+  cursor: pointer;
+  transition: transform 0.15s ease, opacity 0.2s ease;
+}
+
+.actions button:hover,
+.openBtn:hover {
+  opacity: 0.95;
+  transform: translateY(-1px);
+}
+
+.openBtn {
+  white-space: nowrap;
+  padding: 8px 12px;
+}
+
+.scrollAreaUpcoming::-webkit-scrollbar,
+.scrollAreaActivity::-webkit-scrollbar {
+  width: 8px;
+}
+
+.scrollAreaUpcoming::-webkit-scrollbar-track,
+.scrollAreaActivity::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.scrollAreaUpcoming::-webkit-scrollbar-thumb,
+.scrollAreaActivity::-webkit-scrollbar-thumb {
+  background: rgba(190, 219, 176, 0.25);
+  border-radius: 999px;
+}
+
+.scrollAreaUpcoming::-webkit-scrollbar-thumb:hover,
+.scrollAreaActivity::-webkit-scrollbar-thumb:hover {
+  background: rgba(190, 219, 176, 0.45);
+}
+
+@media (max-width: 1120px) {
+  .todayGrid,
+  .mainLayout {
+    grid-template-columns: 1fr;
+  }
+
+  .dashboard {
+    overflow-y: auto;
+  }
+
+  .leftPanel {
+    grid-template-rows: auto auto auto;
+  }
+
+  .scrollAreaActivity {
+    flex: none;
+  }
+}
+
+@media (max-height: 860px) {
+  .dashboard {
+    overflow-y: auto;
+    padding-bottom: 24px;
+  }
+
+  .mainLayout {
+    flex: none;
+    min-height: auto;
+  }
+
+  .leftPanel {
+    grid-template-rows: auto auto auto;
+  }
+
+  .rightPanel {
+    min-height: auto;
+  }
+
+  .activityCard {
+    height: auto;
+  }
+
+  .scrollAreaActivity {
+    flex: none;
+    max-height: 520px;
+  }
+}

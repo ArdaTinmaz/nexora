@@ -14,6 +14,8 @@ const {
   listInvites,
   inviteUser,
   acceptInvite,
+  leaveChannel,
+  removeMember,
 } = require('../controllers/channelController');
 
 const router = express.Router();
@@ -25,6 +27,8 @@ router.post('/', createChannel);
 router.get('/invites', listInvites);
 router.post('/:channelId/invite', inviteUser);
 router.post('/:channelId/accept', acceptInvite);
+router.post('/:channelId/leave', leaveChannel);
+router.delete('/:channelId/members/:userId', removeMember);
 router.patch('/:channelId', updateChannel);
 router.delete('/:channelId', deleteChannel);
 router.post('/:channelId/pin/:messageId', pinMessage);

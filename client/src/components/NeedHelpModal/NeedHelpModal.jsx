@@ -67,7 +67,7 @@ function NeedHelpModal({ isOpen, onClose, onSubmit }) {
         <div className={styles.hero}>
           <div className={styles.heroImage}>
             <img
-              src={assetUrl('images/TaskProDesktop/Flower.png')}
+              src={assetUrl('icon.PNG')}
               alt="Help"
             />
           </div>

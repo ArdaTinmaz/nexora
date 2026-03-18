@@ -9,6 +9,8 @@ import { projectApi } from '../../api/projectApi';
 import ChatWidgetLite from '../../realtime/ChatWidgetLite';
 import CompanyProjectPage from '../CompanyProjectPage/CompanyProjectPage';
 import TasksPage from '../TasksPage/TasksPage';
+import DashboardPage from '../DashboardPage/DashboardPage';
+import { pushRecentHomeItem } from '../../utils/recentHomeItems';
 
 function HomePage() {
   const location = useLocation();
@@ -66,12 +68,46 @@ function HomePage() {
     };
   }, []);
 
-  // Get current board ID from URL
+  // Get current board/project ID from URL
   const companyMatch = matchPath('/home/company/:projectId', location.pathname);
+  const boardMatch = matchPath('/home/:boardName', location.pathname);
   const currentCompanyProjectId = companyMatch?.params?.projectId || null;
-  const currentBoardId = companyMatch
+  const rawBoardName = boardMatch?.params?.boardName || '';
+  const decodedBoardName = rawBoardName ? decodeURIComponent(rawBoardName) : '';
+  const isReservedRoute = rawBoardName === 'tasks' || rawBoardName === 'company';
+  const currentBoardId = companyMatch || !rawBoardName || isReservedRoute
     ? null
-    : boards.find((b) => location.pathname.includes(encodeURIComponent(b.name)))?.id;
+    : boards.find(
+        (board) =>
+          board.name === decodedBoardName || encodeURIComponent(board.name) === rawBoardName
+      )?.id || null;
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    if (currentBoardId) {
+      const board = boards.find((item) => item.id === currentBoardId);
+      if (!board) return;
+      pushRecentHomeItem({
+        type: 'board',
+        id: board.id,
+        label: board.name,
+        path: `/home/${encodeURIComponent(board.name)}`,
+      });
+      return;
+    }
+
+    if (currentCompanyProjectId) {
+      const companyProject = companyProjects.find((item) => item.id === currentCompanyProjectId);
+      if (!companyProject) return;
+      pushRecentHomeItem({
+        type: 'company',
+        id: companyProject.id,
+        label: companyProject.name,
+        path: `/home/company/${companyProject.id}`,
+      });
+    }
+  }, [boards, companyProjects, currentBoardId, currentCompanyProjectId]);
 
   return (
     <div className={styles.homePage}>
@@ -115,23 +151,12 @@ function HomePage() {
             <Route 
               index 
               element={
-                isBoardsLoading || isCompanyLoading ? (
-                  <div className={styles.emptyState}>
-                    <p className={styles.emptyStateText}>Loading your projects...</p>
-                  </div>
-                ) : boards.length === 0 && companyProjects.length === 0 ? (
-                  <div className={styles.emptyState}>
-                    <p className={styles.emptyStateText}>
-                      Before starting your project, it is essential to{' '}
-                      <span className={styles.emptyStateAccent}>create a board</span>{' '}
-                      to visualize and track all the necessary tasks and milestones. This board serves as a powerful tool to organize the workflow and ensure effective collaboration among team members.
-                    </p>
-                  </div>
-                ) : (
-                  <div className={styles.emptyState}>
-                    <p className={styles.emptyStateText}>No project selected</p>
-                  </div>
-                )
+                <DashboardPage
+                  boards={boards}
+                  companyProjects={companyProjects}
+                  boardsLoading={isBoardsLoading}
+                  companyProjectsLoading={isCompanyLoading}
+                />
               } 
             />
           </Routes>

@@ -15,6 +15,7 @@ const {
   acceptInvite,
   ensureChannelMember,
   saveChannelMessage,
+  saveChannelSystemMessage,
   updateChannelMessage,
   deleteChannelMessage,
 } = require('../services/channelService');
@@ -173,6 +174,7 @@ const startSocketServer = async () => {
         io.to(`user:${targetUserId}`).emit('channelInvited', {
           id: invite._id?.toString() || invite.id,
           channelId,
+          channelName: invite.channelName || '',
           fromUserId: userId,
         });
         callback({ ok: true });
@@ -184,14 +186,29 @@ const startSocketServer = async () => {
     socket.on('acceptChannelInvite', async ({ channelId }, callback = () => {}) => {
       try {
         const result = await acceptInvite({ channelId, userId });
+        const joinedAt = Date.now();
+        const joinedUserName = socket.user?.name || 'User';
+        const joinedUserAvatarURL = socket.user?.avatarURL || '';
+        const systemMessage = await saveChannelSystemMessage({
+          channelId,
+          userId,
+          message: `${joinedUserName} joined.`,
+          systemEvent: 'member_joined',
+          systemMeta: {
+            joinedUserId: userId,
+            joinedUserName,
+            joinedUserAvatarURL,
+          },
+        });
         socket.join(`channel:${channelId}`);
         io.to(`channel:${channelId}`).emit('channelMemberJoined', {
           channelId,
           userId,
-          userName: socket.user?.name || 'User',
-          avatarURL: socket.user?.avatarURL || '',
-          joinedAt: Date.now(),
+          userName: joinedUserName,
+          avatarURL: joinedUserAvatarURL,
+          joinedAt,
         });
+        io.to(`channel:${channelId}`).emit('receiveChannelMessage', systemMessage);
         const inviterId = result?.invite?.fromUserId?.toString?.() || result?.invite?.fromUserId || '';
         if (inviterId && inviterId !== userId) {
           await createNotification({

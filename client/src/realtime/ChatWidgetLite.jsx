@@ -84,8 +84,12 @@ const ChatWidgetLite = () => {
   const [newChannelTeam, setNewChannelTeam] = useState('');
   const [channelSearch, setChannelSearch] = useState('');
   const [inviteUserId, setInviteUserId] = useState('');
+  const [removeUserId, setRemoveUserId] = useState('');
   const [channelError, setChannelError] = useState('');
   const [actionError, setActionError] = useState('');
+  const [channelNotice, setChannelNotice] = useState('');
+  const [leavingChannel, setLeavingChannel] = useState(false);
+  const [removingMember, setRemovingMember] = useState(false);
   const [currentUserId, setCurrentUserId] = useState('');
   const [currentUserName, setCurrentUserName] = useState('');
   const [currentUserAvatarURL, setCurrentUserAvatarURL] = useState('');
@@ -187,6 +191,16 @@ const ChatWidgetLite = () => {
     if (!channelMemberIds.size) return [];
     return teamMembers.filter((member) => channelMemberIds.has(member.id));
   }, [selectedChannel, channelMemberIds, teamMembers]);
+
+  const isCurrentUserInSelectedChannel = useMemo(
+    () => Boolean(selectedChannel && currentUserId && channelMemberIds.has(currentUserId)),
+    [selectedChannel, currentUserId, channelMemberIds]
+  );
+
+  const removableMembers = useMemo(
+    () => channelMembers.filter((member) => member.id !== currentUserId),
+    [channelMembers, currentUserId]
+  );
 
   const inviteOptions = useMemo(() => {
     const seen = new Set();
@@ -370,6 +384,10 @@ const ChatWidgetLite = () => {
   }, [selectedChannel]);
 
   useEffect(() => {
+    setRemoveUserId('');
+  }, [selectedChannel?.id]);
+
+  useEffect(() => {
     setExpandedMessageIds((prev) => {
       const next = {};
       messages.forEach((entry) => {
@@ -390,7 +408,12 @@ const ChatWidgetLite = () => {
     };
 
     const handleChannelInvited = (invite) => {
-      setInvites((prev) => [...prev, invite]);
+      if (!invite?.id) return;
+      setInvites((prev) => {
+        const exists = prev.some((entry) => entry.id === invite.id);
+        if (exists) return prev;
+        return [...prev, invite];
+      });
     };
 
     const handleChannelUpdated = (channel) => {
@@ -434,28 +457,46 @@ const ChatWidgetLite = () => {
       setSelectedChannel((prev) =>
         prev?.id === channelId ? { ...prev, members: upsertMember(prev.members || []) } : prev
       );
+    };
 
-      if (selectedChannel?.id === channelId) {
-        const joinedAt = Number(payload?.joinedAt) || Date.now();
-        const userName = payload?.userName || 'A teammate';
-        const avatarURL = payload?.avatarURL || '';
-        const systemId = `system-join-${channelId}-${joinedUserId}-${joinedAt}`;
-        setMessages((prev) => {
-          if (prev.some((entry) => entry.id === systemId)) return prev;
-          return [
-            ...prev,
-            {
-              id: systemId,
-              channelId,
-              type: 'system',
-              message: `${userName} joined the channel.`,
-              joinedUserName: userName,
-              joinedUserAvatarURL: avatarURL,
-              createdAt: joinedAt,
-            },
-          ];
-        });
-      }
+    const handleChannelMemberLeft = (payload) => {
+      const channelId = payload?.channelId;
+      const leftUserId = payload?.userId;
+      if (!channelId || !leftUserId) return;
+
+      const pruneMember = (members = []) =>
+        members.filter((member) => String(member?.userId || '') !== String(leftUserId));
+
+      setChannels((prev) =>
+        prev.map((channel) =>
+          channel.id === channelId ? { ...channel, members: pruneMember(channel.members || []) } : channel
+        )
+      );
+      setSelectedChannel((prev) =>
+        prev?.id === channelId ? { ...prev, members: pruneMember(prev.members || []) } : prev
+      );
+    };
+
+    const handleChannelRemovedForUser = (payload) => {
+      const channelId = payload?.channelId;
+      if (!channelId) return;
+      const messageText = payload?.message || 'You no longer have access to this channel.';
+
+      setChannels((prev) => prev.filter((channel) => channel.id !== channelId));
+      setInvites((prev) => prev.filter((invite) => invite.channelId !== channelId));
+      setChannelNotice(messageText);
+      setActionError(messageText);
+      setMessage('');
+      setSelectedChannel((prev) =>
+        prev?.id === channelId
+          ? {
+              ...prev,
+              members: (prev.members || []).filter(
+                (member) => String(member?.userId || '') !== String(currentUserId)
+              ),
+            }
+          : prev
+      );
     };
 
     const handleChannelMessage = (payload) => {
@@ -485,6 +526,8 @@ const ChatWidgetLite = () => {
     socket.on('channelUpdated', handleChannelUpdated);
     socket.on('channelDeleted', handleChannelDeleted);
     socket.on('channelMemberJoined', handleChannelMemberJoined);
+    socket.on('channelMemberLeft', handleChannelMemberLeft);
+    socket.on('channelRemovedForUser', handleChannelRemovedForUser);
     socket.on('receiveChannelMessage', handleChannelMessage);
     socket.on('channelMessageUpdated', handleChannelMessageUpdated);
     socket.on('channelMessageDeleted', handleChannelMessageDeleted);
@@ -495,6 +538,8 @@ const ChatWidgetLite = () => {
       socket.off('channelUpdated', handleChannelUpdated);
       socket.off('channelDeleted', handleChannelDeleted);
       socket.off('channelMemberJoined', handleChannelMemberJoined);
+      socket.off('channelMemberLeft', handleChannelMemberLeft);
+      socket.off('channelRemovedForUser', handleChannelRemovedForUser);
       socket.off('receiveChannelMessage', handleChannelMessage);
       socket.off('channelMessageUpdated', handleChannelMessageUpdated);
       socket.off('channelMessageDeleted', handleChannelMessageDeleted);
@@ -510,7 +555,9 @@ const ChatWidgetLite = () => {
     setEditingMessageId('');
     setEditingMessageText('');
     setActionError('');
+    setChannelNotice('');
     setInviteUserId('');
+    setRemoveUserId('');
 
     const loadHistory = async (limit = 50) => {
       const history = await channelApi.messages(channel.id, limit);
@@ -568,6 +615,10 @@ const ChatWidgetLite = () => {
 
   const sendMessage = async () => {
     if (!message.trim() || !selectedChannel || !socket) return;
+    if (!isCurrentUserInSelectedChannel) {
+      setActionError('You are no longer a member of this channel.');
+      return;
+    }
     const text = message.trim();
     if (!socket.connected) {
       try {
@@ -649,7 +700,8 @@ const ChatWidgetLite = () => {
       } else {
         await channelApi.acceptInvite(invite.channelId);
       }
-      setInvites((prev) => prev.filter((item) => item.channelId !== invite.channelId));
+      setInvites((prev) => prev.filter((item) => item.id !== invite.id));
+      setChannelNotice('');
       const channelList = await channelApi.list();
       setChannels(channelList || []);
     } catch (err) {
@@ -666,6 +718,45 @@ const ChatWidgetLite = () => {
       setActionError('');
     } catch (err) {
       setActionError(err.message);
+    }
+  };
+
+  const leaveCurrentChannel = async () => {
+    if (!selectedChannel?.id || leavingChannel || removingMember) return;
+    setLeavingChannel(true);
+    try {
+      await channelApi.leaveChannel(selectedChannel.id);
+      setChannels((prev) => prev.filter((channel) => channel.id !== selectedChannel.id));
+      setSelectedChannel((prev) =>
+        prev?.id === selectedChannel.id
+          ? {
+              ...prev,
+              members: (prev.members || []).filter(
+                (member) => String(member?.userId || '') !== String(currentUserId)
+              ),
+            }
+          : prev
+      );
+      setChannelNotice(`You left #${selectedChannel.name}.`);
+      setActionError('');
+    } catch (err) {
+      setActionError(err.message || 'Could not leave channel.');
+    } finally {
+      setLeavingChannel(false);
+    }
+  };
+
+  const removeSelectedMember = async () => {
+    if (!selectedChannel?.id || !removeUserId || removingMember || leavingChannel) return;
+    setRemovingMember(true);
+    try {
+      await channelApi.removeMember(selectedChannel.id, removeUserId);
+      setRemoveUserId('');
+      setActionError('');
+    } catch (err) {
+      setActionError(err.message || 'Member could not be removed.');
+    } finally {
+      setRemovingMember(false);
     }
   };
 
@@ -1069,7 +1160,7 @@ const ChatWidgetLite = () => {
                   <div className="chat-widget-lite-invites-title">Invites</div>
                   {invites.map((invite) => (
                     <div key={invite.id} className="chat-widget-lite-invite-row">
-                      <span>Channel: {invite.channelId}</span>
+                      <span>Channel: {invite.channelName || invite.channelId}</span>
                       <button onClick={() => acceptInvite(invite)}>Accept</button>
                     </div>
                   ))}
@@ -1083,25 +1174,55 @@ const ChatWidgetLite = () => {
               <div className="chat-widget-lite-chat">
                 <div className="chat-widget-lite-chat-header">
                   <div className="chat-widget-lite-chat-title"># {selectedChannel.name}</div>
-                  {canInvite && (
-                    <div className="chat-widget-lite-invite">
-                      <select
-                        value={inviteUserId}
-                        onChange={(e) => setInviteUserId(e.target.value)}
-                        disabled={loadingMembers || inviteOptions.length === 0}
+                  <div className="chat-widget-lite-chat-header-actions">
+                    {canInvite && (
+                      <div className="chat-widget-lite-invite">
+                        <select
+                          value={inviteUserId}
+                          onChange={(e) => setInviteUserId(e.target.value)}
+                          disabled={loadingMembers || inviteOptions.length === 0 || !isCurrentUserInSelectedChannel}
+                        >
+                          <option value="">Add user</option>
+                          {inviteOptions.map((user) => (
+                            <option key={user.id} value={user.id}>
+                              {user.label}
+                            </option>
+                          ))}
+                        </select>
+                        <button onClick={sendInvite} disabled={!inviteUserId || !isCurrentUserInSelectedChannel}>
+                          Add
+                        </button>
+                        <select
+                          value={removeUserId}
+                          onChange={(e) => setRemoveUserId(e.target.value)}
+                          disabled={loadingMembers || removableMembers.length === 0 || !isCurrentUserInSelectedChannel}
+                        >
+                          <option value="">Remove user</option>
+                          {removableMembers.map((member) => (
+                            <option key={member.id} value={member.id}>
+                              {member.name}
+                            </option>
+                          ))}
+                        </select>
+                        <button
+                          onClick={removeSelectedMember}
+                          disabled={!removeUserId || !isCurrentUserInSelectedChannel || removingMember || leavingChannel}
+                        >
+                          {removingMember ? 'Removing...' : 'Remove'}
+                        </button>
+                      </div>
+                    )}
+                    {isCurrentUserInSelectedChannel && (
+                      <button
+                        type="button"
+                        className="chat-widget-lite-leave-button"
+                        onClick={leaveCurrentChannel}
+                        disabled={leavingChannel || removingMember}
                       >
-                        <option value="">Add user</option>
-                        {inviteOptions.map((user) => (
-                          <option key={user.id} value={user.id}>
-                            {user.label}
-                          </option>
-                        ))}
-                      </select>
-                      <button onClick={sendInvite} disabled={!inviteUserId}>
-                        Add
+                        {leavingChannel ? 'Leaving...' : 'Leave'}
                       </button>
-                    </div>
-                  )}
+                    )}
+                  </div>
                 </div>
 
                 <div
@@ -1149,19 +1270,23 @@ const ChatWidgetLite = () => {
                   )}
                   {messages.map((entry, messageIndex) => {
                     if (entry?.type === 'system') {
-                      const joinedName = entry.joinedUserName || 'A teammate';
+                      const joinedName = entry.joinedUserName || '';
                       const joinedAvatar = resolveAvatarUrl(entry.joinedUserAvatarURL || '');
+                      const systemText = String(entry.message || `${joinedName || 'A teammate'} joined.`);
+                      const showSystemAvatar = Boolean(joinedName || joinedAvatar);
                       return (
                         <div key={entry.id || `system-${entry.createdAt}`} className="chat-widget-lite-system-message">
-                          <span className="chat-widget-lite-system-avatar" title={joinedName}>
-                            {joinedAvatar ? (
-                              <img src={joinedAvatar} alt={joinedName} />
-                            ) : (
-                              <span>{getInitials(joinedName)}</span>
-                            )}
-                          </span>
+                          {showSystemAvatar && (
+                            <span className="chat-widget-lite-system-avatar" title={joinedName}>
+                              {joinedAvatar ? (
+                                <img src={joinedAvatar} alt={joinedName} />
+                              ) : (
+                                <span>{getInitials(joinedName)}</span>
+                              )}
+                            </span>
+                          )}
                           <span className="chat-widget-lite-system-text">
-                            <strong>{joinedName}</strong> joined the channel.
+                            {systemText}
                           </span>
                         </div>
                       );
@@ -1326,12 +1451,17 @@ const ChatWidgetLite = () => {
                 >
                   <div className="chat-widget-lite-input-wrap">
                     <input
-                      placeholder="Type a message..."
+                      placeholder={
+                        isCurrentUserInSelectedChannel
+                          ? 'Type a message...'
+                          : 'You are no longer a member of this channel.'
+                      }
                       value={message}
                       onChange={(e) => setMessage(e.target.value)}
                       maxLength={1000}
+                      disabled={!isCurrentUserInSelectedChannel}
                     />
-                    {mentionSuggestions.length > 0 && (
+                    {isCurrentUserInSelectedChannel && mentionSuggestions.length > 0 && (
                       <div className="chat-widget-lite-mentions">
                         {mentionSuggestions.map((member) => (
                           <button
@@ -1345,13 +1475,14 @@ const ChatWidgetLite = () => {
                       </div>
                     )}
                   </div>
-                  <button type="submit" disabled={!message.trim()}>
+                  <button type="submit" disabled={!message.trim() || !isCurrentUserInSelectedChannel}>
                     Send
                   </button>
                 </form>
               </div>
             ) : (
               <div className="chat-widget-lite-placeholder">
+                {channelNotice && <div className="chat-widget-lite-placeholder-notice">{channelNotice}</div>}
                 Select a channel from the left panel to start messaging.
               </div>
             )}

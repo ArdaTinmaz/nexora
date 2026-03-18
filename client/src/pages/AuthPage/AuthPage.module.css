@@ -16,6 +16,28 @@
   box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
 }
 
+.logoContainer {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  margin-bottom: 28px;
+}
+
+.logoIcon {
+  width: 56px;
+  height: 56px;
+  object-fit: contain;
+}
+
+.logoText {
+  font-family: var(--font-family);
+  font-weight: 600;
+  font-size: 30px;
+  letter-spacing: -0.03em;
+  color: var(--text-white);
+}
+
 .authTabs {
   display: flex;
   gap: 24px;
@@ -49,6 +71,15 @@
     max-width: 100%;
   }
 
+  .logoIcon {
+    width: 44px;
+    height: 44px;
+  }
+
+  .logoText {
+    font-size: 26px;
+  }
+
   .authTabs {
     gap: 16px;
     margin-bottom: 32px;
@@ -75,6 +106,15 @@
 
   .authTabs {
     gap: 24px;
+  }
+
+  .logoIcon {
+    width: 56px;
+    height: 56px;
+  }
+
+  .logoText {
+    font-size: 30px;
   }
 
   .authTab {

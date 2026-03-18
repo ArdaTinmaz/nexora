@@ -1,7 +1,7 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import styles from './WelcomePage.module.css';
-import { assetUrl, spriteHref } from '../../utils/assets';
+import { assetUrl } from '../../utils/assets';
 
 function WelcomePage() {
   const navigate = useNavigate();
@@ -20,9 +20,11 @@ function WelcomePage() {
 
         {/* Nexora Logo */}
         <div className={styles.logoContainer}>
-          <svg className={styles.lightningIcon} width="48" height="48" viewBox="0 0 32 32">
-            <use href={spriteHref('icon-icon')}></use>
-          </svg>
+          <img
+            className={styles.logoIcon}
+            src={assetUrl('icon.PNG')}
+            alt="Nexora icon"
+          />
           <span className={styles.logoText}>Nexora</span>
         </div>
 

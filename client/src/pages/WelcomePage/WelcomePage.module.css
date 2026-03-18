@@ -40,10 +40,11 @@
   gap: 12px;
 }
 
-.lightningIcon {
-  width: 48px;
-  height: 48px;
+.logoIcon {
+  width: 72px;
+  height: 72px;
   flex-shrink: 0;
+  object-fit: contain;
 }
 
 .logoText {
@@ -121,9 +122,9 @@
     gap: 8px;
   }
 
-  .lightningIcon {
-    width: 32px;
-    height: 32px;
+  .logoIcon {
+    width: 52px;
+    height: 52px;
   }
 
   .logoText {
@@ -153,9 +154,9 @@
     gap: 10px;
   }
 
-  .lightningIcon {
-    width: 40px;
-    height: 40px;
+  .logoIcon {
+    width: 60px;
+    height: 60px;
   }
 
   .logoText {
@@ -179,9 +180,9 @@
     height: 162px;
   }
 
-  .lightningIcon {
-    width: 48px;
-    height: 48px;
+  .logoIcon {
+    width: 72px;
+    height: 72px;
   }
 
   .logoText {
@@ -210,9 +211,9 @@
     height: 162px;
   }
 
-  .lightningIcon {
-    width: 48px;
-    height: 48px;
+  .logoIcon {
+    width: 72px;
+    height: 72px;
   }
 
   .logoText {

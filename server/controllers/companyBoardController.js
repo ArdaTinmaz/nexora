@@ -187,6 +187,20 @@ const syncAssignmentStatusByCardId = async ({ cardId, completed }) => {
   await TaskAssignment.updateMany({ cardId: String(cardId) }, { status: nextStatus });
 };
 
+const syncAssignmentAssigneeByCardId = async ({ cardId, assignedTo, status }) => {
+  if (!cardId || !assignedTo) return;
+
+  const updates = {
+    assignedTo: toObjectId(assignedTo, 'Invalid user'),
+  };
+
+  if (status) {
+    updates.status = status;
+  }
+
+  await TaskAssignment.updateMany({ cardId: String(cardId) }, updates);
+};
+
 const getUserRoleForProject = async ({ projectId, userId }) => {
   const projectObjectId = toObjectId(projectId, 'Invalid project');
   const teams = await Team.find({
@@ -702,6 +716,14 @@ const setCardCompletion = async (req, res, next) => {
       cardId: updated._id?.toString() || cardId,
       completed: Boolean(updated.completed),
     });
+    const primaryAssignee = normalizeCardAssignees(updated)[0] || null;
+    if (primaryAssignee?.userId) {
+      await syncAssignmentAssigneeByCardId({
+        cardId: updated._id?.toString() || cardId,
+        assignedTo: primaryAssignee.userId,
+        status: updated?.completed ? 'completed' : 'in-progress',
+      });
+    }
 
     res.json(mapCard(updated));
   } catch (error) {
@@ -741,6 +763,14 @@ const setCardOwnership = async (req, res, next) => {
 
     if (action === 'claim') {
       if (isAlreadyAssigned) {
+        const existingPrimaryAssignee = currentAssignees[0] || null;
+        if (existingPrimaryAssignee?.userId) {
+          await syncAssignmentAssigneeByCardId({
+            cardId: existing._id?.toString() || cardId,
+            assignedTo: existingPrimaryAssignee.userId,
+            status: existing?.completed ? 'completed' : 'in-progress',
+          });
+        }
         res.json(mapCard(existing));
         return;
       }
@@ -772,6 +802,14 @@ const setCardOwnership = async (req, res, next) => {
         },
         { new: true }
       ).lean();
+
+      if (primaryAssignee?.userId) {
+        await syncAssignmentAssigneeByCardId({
+          cardId: updated?._id?.toString() || cardId,
+          assignedTo: primaryAssignee.userId,
+          status: updated?.completed ? 'completed' : 'in-progress',
+        });
+      }
 
       const teamsInProject = await Team.find({
         $or: [
@@ -828,6 +866,20 @@ const setCardOwnership = async (req, res, next) => {
       },
       { new: true }
     ).lean();
+
+    const existingAssignment = await TaskAssignment.findOne({
+      cardId: cardObjectId.toString(),
+    }).sort({ assignedAt: -1 }).lean();
+    const fallbackAssigneeId =
+      primaryAssignee?.userId || existingAssignment?.assignedBy?.toString?.() || '';
+
+    if (fallbackAssigneeId) {
+      await syncAssignmentAssigneeByCardId({
+        cardId: updated?._id?.toString() || cardId,
+        assignedTo: fallbackAssigneeId,
+        status: updated?.completed ? 'completed' : (primaryAssignee ? 'in-progress' : 'pending'),
+      });
+    }
 
     res.json(mapCard(updated));
   } catch (error) {

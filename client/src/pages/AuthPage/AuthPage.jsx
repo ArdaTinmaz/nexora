@@ -3,6 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import LoginForm from '../../components/LoginForm/LoginForm';
 import RegisterForm from '../../components/RegisterForm/RegisterForm';
 import styles from './AuthPage.module.css';
+import { assetUrl } from '../../utils/assets';
 
 function AuthPage() {
   const { id } = useParams();
@@ -16,6 +17,15 @@ function AuthPage() {
   return (
     <div className={styles.authPage}>
       <div className={styles.authContainer}>
+        <div className={styles.logoContainer}>
+          <img
+            className={styles.logoIcon}
+            src={assetUrl('icon.PNG')}
+            alt="Nexora icon"
+          />
+          <span className={styles.logoText}>Nexora</span>
+        </div>
+
         {/* Tabs */}
         <div className={styles.authTabs}>
           <button
