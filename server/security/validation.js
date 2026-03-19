@@ -76,14 +76,23 @@ const validatePayloadShape = (payload, { maxDepth = 6, maxKeys = 200, maxArrayLe
   walk(payload, 0);
 };
 
-const sanitizePayloadStrings = (value, { maxLength = 5000 } = {}) => {
+const sanitizePayloadStrings = (
+  value,
+  { maxLength = 5000, maxLengthByKey = {} } = {}
+) => {
   if (Array.isArray(value)) {
-    return value.map((entry) => sanitizePayloadStrings(entry, { maxLength }));
+    return value.map((entry) => sanitizePayloadStrings(entry, { maxLength, maxLengthByKey }));
   }
 
   if (value && typeof value === 'object') {
     return Object.entries(value).reduce((acc, [key, entry]) => {
-      acc[key] = sanitizePayloadStrings(entry, { maxLength });
+      const scopedMaxLength = Number.isFinite(Number(maxLengthByKey[key]))
+        ? Number(maxLengthByKey[key])
+        : maxLength;
+      acc[key] = sanitizePayloadStrings(entry, {
+        maxLength: scopedMaxLength,
+        maxLengthByKey,
+      });
       return acc;
     }, {});
   }

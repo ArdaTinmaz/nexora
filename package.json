@@ -8,10 +8,14 @@
     "start:server": "npm --prefix server run dev",
     "start:electron": "ELECTRON_MANAGED_BACKEND=1 wait-on http://localhost:3000 && electron .",
     "dev": "concurrently \"npm run start:client\" \"npm run start:electron\"",
-    "build:client": "npm --prefix client run build",
-    "pack": "npm run build:client && electron-builder --dir",
-    "dist": "npm run build:client && electron-builder",
-    "dist:win": "npm run build:client && electron-builder --win nsis"
+    "prepare:client": "npm --prefix client install",
+    "prepare:server": "npm --prefix server install --omit=dev",
+    "build:client": "npm run prepare:client && npm --prefix client run build",
+    "pack": "npm run build:client && npm run prepare:server && electron-builder --dir",
+    "dist": "npm run build:client && npm run prepare:server && node scripts/dist-by-platform.js",
+    "dist:all": "npm run build:client && npm run prepare:server && electron-builder --mac dmg --win nsis",
+    "dist:mac": "npm run build:client && npm run prepare:server && electron-builder --mac dmg",
+    "dist:win": "npm run build:client && npm run prepare:server && electron-builder --win nsis"
   },
   "dependencies": {
     "socket.io-client": "^4.8.3"
@@ -64,6 +68,12 @@
       "icon": "client/public/favicon.ico",
       "target": [
         "nsis"
+      ]
+    },
+    "mac": {
+      "icon": "client/public/icon.PNG",
+      "target": [
+        "dmg"
       ]
     },
     "nsis": {

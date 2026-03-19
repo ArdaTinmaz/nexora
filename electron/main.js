@@ -1,4 +1,4 @@
-const { app, BrowserWindow } = require('electron');
+const { app, BrowserWindow, dialog } = require('electron');
 const path = require('path');
 const registerIpcHandlers = require('./services/ipc');
 const runtime = require('./services/runtime');
@@ -67,7 +67,17 @@ if (!gotSingleInstanceLock) {
   app.whenReady().then(async () => {
     sessionStore.loadState();
     registerIpcHandlers();
-    await startManagedBackends();
+    try {
+      await startManagedBackends();
+    } catch (error) {
+      // eslint-disable-next-line no-console
+      console.error('Managed backend startup failed:', error);
+      dialog.showErrorBox(
+        'Backend baslatilamadi',
+        `Sunucu servisleri acilamadi.\n\n${error.message}\n\n` +
+          'server/.env dosyasinda MONGODB_URI tanimli oldugundan emin olun.'
+      );
+    }
     createWindow();
 
     app.on('activate', () => {

@@ -5,6 +5,7 @@ const ChannelInvite = require('../models/ChannelInvite');
 const Team = require('../models/Team');
 const UserModel = require('../models/User');
 const AdminUserProfile = require('../models/AdminUserProfile');
+const normalizeAvatarUrl = require('../utils/normalizeAvatarUrl');
 const { findUserRoleInTeam } = require('../realtime/roomAuth');
 const { createNotificationsForUsers } = require('./notificationService');
 const { encryptText, decryptText } = require('../security/dataEncryption');
@@ -16,6 +17,10 @@ const toObjectId = (id) => new mongoose.Types.ObjectId(id);
 const normalizeRoleLabel = (role) => (role === 'team_leader' ? 'team lead' : String(role || 'member'));
 
 const mapChannelMessage = (msg) => ({
+  // Keep historical system messages compatible by normalizing any stored avatar path format.
+  // Older records may contain Windows-style absolute paths.
+  // For UI compatibility, we expose the normalized value in joinedUserAvatarURL.
+  // (Client currently reads this key for system badges.)
   id: msg._id.toString(),
   channelId: msg.channelId.toString(),
   senderId: msg.senderId.toString(),
@@ -24,7 +29,12 @@ const mapChannelMessage = (msg) => ({
   systemEvent: msg.systemEvent || '',
   systemMeta: msg.systemMeta || null,
   joinedUserName: msg.systemMeta?.joinedUserName || '',
-  joinedUserAvatarURL: msg.systemMeta?.joinedUserAvatarURL || '',
+  joinedUserAvatarURL: normalizeAvatarUrl(
+    msg.systemMeta?.joinedUserAvatarURL ||
+      msg.systemMeta?.leftUserAvatarURL ||
+      msg.systemMeta?.removedUserAvatarURL ||
+      ''
+  ),
   createdAt: msg.createdAt,
   updatedAt: msg.updatedAt || msg.createdAt,
   isDeleted: Boolean(msg.isDeleted),

@@ -12,6 +12,7 @@ import './ChatWidgetLite.css';
 
 const DELETED_MESSAGE_TEXT = 'This message was deleted.';
 const MESSAGE_PREVIEW_CHAR_LIMIT = 220;
+const WINDOWS_ABSOLUTE_PATH_RE = /^[a-z]:\//i;
 
 const formatTime = (timestamp) =>
   new Date(timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
@@ -52,12 +53,35 @@ const getInitials = (name) =>
     .map((part) => part[0]?.toUpperCase() || '')
     .join('');
 
-const resolveAvatarUrl = (avatarURL) => {
+const normalizeAvatarPath = (avatarURL) => {
   if (!avatarURL) return '';
-  if (/^(?:https?:|data:|blob:|file:)/i.test(avatarURL)) return avatarURL;
-  if (avatarURL.startsWith('/')) return `${API_ORIGIN}${avatarURL}`;
-  if (avatarURL.startsWith('uploads/')) return `${API_ORIGIN}/${avatarURL}`;
-  return `${API_ORIGIN}/uploads/${avatarURL}`;
+
+  const trimmed = String(avatarURL).trim();
+  if (!trimmed) return '';
+  if (/^(?:https?:|data:|blob:|file:)/i.test(trimmed)) return trimmed;
+
+  const normalized = trimmed.replace(/\\/g, '/');
+  const uploadsIndex = normalized.toLowerCase().indexOf('/uploads/');
+  if (uploadsIndex >= 0) {
+    return normalized.slice(uploadsIndex);
+  }
+
+  if (WINDOWS_ABSOLUTE_PATH_RE.test(normalized)) {
+    const fileName = normalized.split('/').pop();
+    return fileName ? `/uploads/${fileName}` : '';
+  }
+
+  if (normalized.startsWith('/')) return normalized;
+  if (normalized.startsWith('uploads/')) return `/${normalized}`;
+  if (!normalized.includes('/')) return `/uploads/${normalized}`;
+  return `/${normalized.replace(/^\/+/, '')}`;
+};
+
+const resolveAvatarUrl = (avatarURL) => {
+  const normalized = normalizeAvatarPath(avatarURL);
+  if (!normalized) return '';
+  if (/^(?:https?:|data:|blob:|file:)/i.test(normalized)) return normalized;
+  return `${API_ORIGIN}${normalized}`;
 };
 
 const ChatWidgetLite = () => {
@@ -96,6 +120,7 @@ const ChatWidgetLite = () => {
   const [currentUserId, setCurrentUserId] = useState('');
   const [currentUserName, setCurrentUserName] = useState('');
   const [currentUserAvatarURL, setCurrentUserAvatarURL] = useState('');
+  const [failedAvatarSources, setFailedAvatarSources] = useState({});
   const [activeMenuMessageId, setActiveMenuMessageId] = useState('');
   const [activeMenuChannelId, setActiveMenuChannelId] = useState('');
   const [editingMessageId, setEditingMessageId] = useState('');
@@ -111,6 +136,14 @@ const ChatWidgetLite = () => {
 
   const socket = useMemo(() => {
     return createSocket();
+  }, []);
+
+  const markAvatarFailed = useCallback((src) => {
+    if (!src) return;
+    setFailedAvatarSources((prev) => {
+      if (prev[src]) return prev;
+      return { ...prev, [src]: true };
+    });
   }, []);
 
   useEffect(() => () => socket.disconnect(), [socket]);
@@ -1332,14 +1365,19 @@ const ChatWidgetLite = () => {
                     if (entry?.type === 'system') {
                       const joinedName = entry.joinedUserName || '';
                       const joinedAvatar = resolveAvatarUrl(entry.joinedUserAvatarURL || '');
+                      const canRenderJoinedAvatar = Boolean(joinedAvatar && !failedAvatarSources[joinedAvatar]);
                       const systemText = String(entry.message || `${joinedName || 'A teammate'} joined.`);
                       const showSystemAvatar = Boolean(joinedName || joinedAvatar);
                       return (
                         <div key={entry.id || `system-${entry.createdAt}`} className="chat-widget-lite-system-message">
                           {showSystemAvatar && (
                             <span className="chat-widget-lite-system-avatar" title={joinedName}>
-                              {joinedAvatar ? (
-                                <img src={joinedAvatar} alt={joinedName} />
+                              {canRenderJoinedAvatar ? (
+                                <img
+                                  src={joinedAvatar}
+                                  alt={joinedName}
+                                  onError={() => markAvatarFailed(joinedAvatar)}
+                                />
                               ) : (
                                 <span>{getInitials(joinedName)}</span>
                               )}
@@ -1360,6 +1398,7 @@ const ChatWidgetLite = () => {
                     const avatarURL = resolveAvatarUrl(
                       sender?.avatarURL || (isOwn ? currentUserAvatarURL : '')
                     );
+                    const canRenderAvatar = Boolean(avatarURL && !failedAvatarSources[avatarURL]);
                     const isEditing = editingMessageId === entry.id;
                     const isSaving = savingMessageId === entry.id;
                     const isDeleting = deletingMessageId === entry.id;
@@ -1385,8 +1424,12 @@ const ChatWidgetLite = () => {
                       >
                         {!isOwn && (
                           <div className="chat-widget-lite-avatar" title={senderName}>
-                            {avatarURL ? (
-                              <img src={avatarURL} alt={senderName} />
+                            {canRenderAvatar ? (
+                              <img
+                                src={avatarURL}
+                                alt={senderName}
+                                onError={() => markAvatarFailed(avatarURL)}
+                              />
                             ) : (
                               <span>{getInitials(senderName)}</span>
                             )}
@@ -1490,8 +1533,12 @@ const ChatWidgetLite = () => {
 
                         {isOwn && (
                           <div className="chat-widget-lite-avatar" title={senderName}>
-                            {avatarURL ? (
-                              <img src={avatarURL} alt={senderName} />
+                            {canRenderAvatar ? (
+                              <img
+                                src={avatarURL}
+                                alt={senderName}
+                                onError={() => markAvatarFailed(avatarURL)}
+                              />
                             ) : (
                               <span>{getInitials(senderName)}</span>
                             )}

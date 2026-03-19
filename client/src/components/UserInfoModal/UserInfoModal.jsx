@@ -6,6 +6,8 @@ import { getSession, setSession } from '../../desktop/session';
 import { showNotification } from '../../desktop/notifications';
 import { spriteHref } from '../../utils/assets';
 
+const WINDOWS_ABSOLUTE_PATH_RE = /^[a-z]:\//i;
+
 function UserInfoModal({ isOpen, onClose, onProfileUpdate }) {
   const readFileAsDataUrl = (file) =>
     new Promise((resolve, reject) => {
@@ -22,6 +24,7 @@ function UserInfoModal({ isOpen, onClose, onProfileUpdate }) {
   const [confirmPassword, setConfirmPassword] = useState('');
   const [avatarDataUrl, setAvatarDataUrl] = useState('');
   const [avatarPreview, setAvatarPreview] = useState('');
+  const [avatarLoadFailed, setAvatarLoadFailed] = useState(false);
   const [status, setStatus] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
@@ -61,13 +64,25 @@ function UserInfoModal({ isOpen, onClose, onProfileUpdate }) {
 
   const getAvatarSrc = () => {
     if (avatarPreview) {
-      if (/^(?:https?:|data:|blob:|file:)/i.test(avatarPreview)) return avatarPreview;
-      if (avatarPreview.startsWith('/')) return `${API_ORIGIN}${avatarPreview}`;
-      if (avatarPreview.startsWith('uploads/')) return `${API_ORIGIN}/${avatarPreview}`;
-      return `${API_ORIGIN}/uploads/${avatarPreview}`;
+      const normalized = String(avatarPreview).trim().replace(/\\/g, '/');
+      if (!normalized) return '';
+      if (/^(?:https?:|data:|blob:|file:)/i.test(normalized)) return normalized;
+      const uploadsIndex = normalized.toLowerCase().indexOf('/uploads/');
+      if (uploadsIndex >= 0) return `${API_ORIGIN}${normalized.slice(uploadsIndex)}`;
+      if (WINDOWS_ABSOLUTE_PATH_RE.test(normalized)) {
+        const fileName = normalized.split('/').pop();
+        return fileName ? `${API_ORIGIN}/uploads/${fileName}` : '';
+      }
+      if (normalized.startsWith('/')) return `${API_ORIGIN}${normalized}`;
+      if (normalized.startsWith('uploads/')) return `${API_ORIGIN}/${normalized}`;
+      return `${API_ORIGIN}/uploads/${normalized}`;
     }
     return '';
   };
+
+  useEffect(() => {
+    setAvatarLoadFailed(false);
+  }, [avatarPreview]);
 
   if (!isOpen) return null;
 
@@ -161,6 +176,7 @@ function UserInfoModal({ isOpen, onClose, onProfileUpdate }) {
       const dataUrl = await readFileAsDataUrl(file);
       setAvatarDataUrl(dataUrl);
       setAvatarPreview(dataUrl);
+      setAvatarLoadFailed(false);
     } catch (err) {
       setError(err.message || 'Avatar secilemedi');
     }
@@ -189,8 +205,12 @@ function UserInfoModal({ isOpen, onClose, onProfileUpdate }) {
             <label className={styles.label}>Avatar</label>
             <div className={styles.avatarSection}>
               <div className={styles.avatarPreview}>
-                {getAvatarSrc() ? (
-                  <img src={getAvatarSrc()} alt="Avatar" />
+                {getAvatarSrc() && !avatarLoadFailed ? (
+                  <img
+                    src={getAvatarSrc()}
+                    alt="Avatar"
+                    onError={() => setAvatarLoadFailed(true)}
+                  />
                 ) : (
                   <svg width="64" height="64" viewBox="0 0 32 32">
                     <use href={spriteHref('icon-user-white')}></use>

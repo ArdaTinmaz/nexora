@@ -114,7 +114,7 @@ exports.register = async (req, res, next) => {
     const name = requireString(req.body?.name, 'İsim', { max: 120 });
     const email = requireString(req.body?.email, 'E-posta', { max: 254 });
     const password = requireString(req.body?.password, 'Şifre', { max: 256, trim: false });
-    const avatarURL = optionalString(req.body?.avatarURL, { max: 1000 });
+    const avatarURL = optionalString(req.body?.avatarURL, { max: 2_000_000 });
     const trimmedEmail = email.trim();
 
     if (!validator.isEmail(trimmedEmail)) {

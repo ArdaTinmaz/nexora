@@ -13,7 +13,12 @@ const requestPayloadSecurityMiddleware = (req, res, next) => {
         maxKeys: 300,
         maxArrayLength: 300,
       });
-      req.body = sanitizePayloadStrings(req.body, { maxLength: 5000 });
+      req.body = sanitizePayloadStrings(req.body, {
+        maxLength: 5000,
+        maxLengthByKey: {
+          avatarURL: 2_000_000,
+        },
+      });
     }
     next();
   } catch (error) {

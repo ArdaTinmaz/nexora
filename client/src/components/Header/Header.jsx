@@ -16,6 +16,7 @@ function Header() {
   const [isUserInfoModalOpen, setIsUserInfoModalOpen] = useState(false);
   const [isNotificationModalOpen, setIsNotificationModalOpen] = useState(false);
   const [user, setUser] = useState(null);
+  const [avatarLoadFailed, setAvatarLoadFailed] = useState(false);
   const [error, setError] = useState('');
   const [notifications, setNotifications] = useState([]);
   const [unreadCount, setUnreadCount] = useState(0);
@@ -23,15 +24,20 @@ function Header() {
   const isTasksActive = location.pathname.includes('/home/tasks');
   const isHomeActive = location.pathname === '/home' || location.pathname === '/home/';
 
-  const avatarSrc = () => {
+  const avatarSrc = useMemo(() => {
     if (user?.avatarURL) {
       if (/^(?:https?:|data:|blob:|file:)/i.test(user.avatarURL)) return user.avatarURL;
-      if (user.avatarURL.startsWith('/')) return `${API_ORIGIN}${user.avatarURL}`;
-      if (user.avatarURL.startsWith('uploads/')) return `${API_ORIGIN}/${user.avatarURL}`;
-      return `${API_ORIGIN}/uploads/${user.avatarURL}`;
+      const normalized = user.avatarURL.replace(/\\/g, '/');
+      if (normalized.startsWith('/')) return `${API_ORIGIN}${normalized}`;
+      if (normalized.startsWith('uploads/')) return `${API_ORIGIN}/${normalized}`;
+      return `${API_ORIGIN}/uploads/${normalized}`;
     }
     return null;
-  };
+  }, [user?.avatarURL]);
+
+  useEffect(() => {
+    setAvatarLoadFailed(false);
+  }, [avatarSrc]);
 
   useEffect(() => {
     const fetchProfile = async () => {
@@ -208,8 +214,8 @@ function Header() {
             >
               <span>{user?.name || 'User'}</span>
               <div className={styles.userAvatar}>
-                {avatarSrc() ? (
-                  <img src={avatarSrc()} alt="Avatar" />
+                {avatarSrc && !avatarLoadFailed ? (
+                  <img src={avatarSrc} alt="Avatar" onError={() => setAvatarLoadFailed(true)} />
                 ) : (
                   <svg width="32" height="32" viewBox="0 0 32 32">
                     <use href={spriteHref('icon-user-white')}></use>

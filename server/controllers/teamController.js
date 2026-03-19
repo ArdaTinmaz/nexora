@@ -1,6 +1,7 @@
 const mongoose = require('mongoose');
 const Team = require('../models/Team');
 const UserModel = require('../models/User');
+const normalizeAvatarUrl = require('../utils/normalizeAvatarUrl');
 const { findUserRoleInTeam } = require('../realtime/roomAuth');
 const { listTeamsForUser } = require('../services/channelService');
 
@@ -61,7 +62,7 @@ exports.getTeamMembers = async (req, res, next) => {
         name: user.name || user.email || entry.userId,
         email: user.email || '',
         role: entry.role,
-        avatarURL: user.avatarURL || '',
+        avatarURL: normalizeAvatarUrl(user.avatarURL || ''),
       };
     });
 

@@ -6,6 +6,34 @@ const runtime = require('./runtime');
 const socketManager = require('./socketManager');
 const deepLinks = require('./deepLinks');
 
+const parseRequestTimeoutMs = () => {
+  const value = Number.parseInt(process.env.ELECTRON_API_TIMEOUT_MS || '', 10);
+  if (Number.isFinite(value) && value > 0) {
+    return value;
+  }
+
+  return 15000;
+};
+
+const API_REQUEST_TIMEOUT_MS = parseRequestTimeoutMs();
+
+const buildRequestErrorMessage = (error) => {
+  if (error?.name === 'AbortError') {
+    return 'Server request timed out. Please check backend connection.';
+  }
+
+  const code = error?.cause?.code || error?.code || '';
+  if (code === 'ECONNREFUSED') {
+    return 'Backend is not reachable on localhost. Please verify API service.';
+  }
+
+  if (code === 'ENOTFOUND' || code === 'EAI_AGAIN') {
+    return 'DNS lookup failed while contacting backend service.';
+  }
+
+  return error?.message || 'Request failed';
+};
+
 const createFormData = (entries) => {
   const formData = new FormData();
 
@@ -98,17 +126,41 @@ const registerIpcHandlers = () => {
       delete resolvedHeaders['content-type'];
     }
 
-    const response = await fetch(targetUrl, {
-      method,
-      headers: resolvedHeaders,
-      body: resolveRequestBody(body),
-    });
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), API_REQUEST_TIMEOUT_MS);
 
-    return {
-      ok: response.ok,
-      status: response.status,
-      data: await parseResponse(response),
-    };
+    try {
+      const response = await fetch(targetUrl, {
+        method,
+        headers: resolvedHeaders,
+        body: resolveRequestBody(body),
+        signal: controller.signal,
+      });
+
+      return {
+        ok: response.ok,
+        status: response.status,
+        data: await parseResponse(response),
+      };
+    } catch (error) {
+      // eslint-disable-next-line no-console
+      console.error('Desktop API request failed:', {
+        targetUrl,
+        method,
+        message: error?.message,
+        code: error?.cause?.code || error?.code || '',
+      });
+
+      return {
+        ok: false,
+        status: 0,
+        data: {
+          message: buildRequestErrorMessage(error),
+        },
+      };
+    } finally {
+      clearTimeout(timeoutId);
+    }
   });
 
   ipcMain.handle('notifications:show', async (_event, payload = {}) => {
