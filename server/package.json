@@ -21,6 +21,7 @@
     "mongoose": "^8.4.1",
     "morgan": "^1.10.0",
     "multer": "^1.4.5-lts.1",
+    "nexora-desktop": "file:..",
     "sib-api-v3-sdk": "^8.5.0",
     "socket.io": "^4.8.3",
     "validator": "^13.11.0"
