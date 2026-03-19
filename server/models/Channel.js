@@ -6,6 +6,7 @@ const channelMemberSchema = new Schema(
   {
     userId: { type: Schema.Types.ObjectId, ref: 'User', required: true },
     role: { type: String, required: true },
+    joinedAt: { type: Number, default: Date.now },
   },
   { _id: false }
 );

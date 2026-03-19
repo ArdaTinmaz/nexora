@@ -9,6 +9,8 @@ const AdminUserProfile = require('../models/AdminUserProfile');
 const Channel = require('../models/Channel');
 const { createProject } = require('../services/projectService');
 const normalizeAvatarUrl = require('../utils/normalizeAvatarUrl');
+const { logSecurityEvent } = require('../services/auditLogService');
+const { extractClientIpFromRequest, getUserAgentFromRequest } = require('../security/requestMeta');
 
 const toObjectId = (id) => new mongoose.Types.ObjectId(id);
 const isValidObjectId = (id) => mongoose.Types.ObjectId.isValid(id);
@@ -156,6 +158,30 @@ exports.updateUserMeta = async (req, res, next) => {
     ).lean();
 
     await UserModel.updateUserFields(userId, { role: updated.role || 'developer' });
+
+    const previousRole = existing?.role || 'developer';
+    const nextRole = updated.role || 'developer';
+    if (previousRole !== nextRole) {
+      await logSecurityEvent({
+        eventType: 'admin.role_changed',
+        category: 'admin',
+        severity: 'high',
+        outcome: 'success',
+        actorType: 'admin',
+        actorId: req.admin?.username || 'admin',
+        actorName: req.admin?.username || 'admin',
+        targetType: 'user',
+        targetId: userId,
+        resource: `/api/admin/users/${userId}/meta`,
+        ip: extractClientIpFromRequest(req),
+        userAgent: getUserAgentFromRequest(req),
+        message: 'User role updated by admin',
+        metadata: {
+          previousRole,
+          nextRole,
+        },
+      });
+    }
 
     res.json({
       userId,

@@ -70,6 +70,7 @@
       "installerIcon": "client/public/favicon.ico",
       "uninstallerIcon": "client/public/favicon.ico",
       "installerHeaderIcon": "client/public/favicon.ico",
+      "license": "installer/TERMS_OF_POLICY.txt",
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,

@@ -7,6 +7,8 @@ const {
   resetPassword,
 } = require('../controllers/adminAuthController');
 const { getAdminProfile, updateAdminProfile } = require('../controllers/adminProfileController');
+const { createEndpointRateLimiter } = require('../security/endpointRateLimit');
+const adminActionAuditMiddleware = require('../middleware/adminActionAuditMiddleware');
 const {
   listUsers,
   updateUserMeta,
@@ -26,12 +28,19 @@ const {
 
 const router = express.Router();
 
-router.post('/login', login);
+const adminLoginRateLimiter = createEndpointRateLimiter({
+  scope: 'admin:login',
+  windowMs: 60 * 1000,
+  maxRequests: Number(process.env.ADMIN_LOGIN_RATE_LIMIT_PER_MINUTE) || 10,
+});
+
+router.post('/login', adminLoginRateLimiter, login);
 router.post('/forgot-password/request', requestPasswordReset);
 router.post('/forgot-password/verify', verifyPasswordReset);
 router.post('/forgot-password/reset', resetPassword);
 
 router.use(adminAuthMiddleware);
+router.use(adminActionAuditMiddleware);
 
 router.get('/profile', getAdminProfile);
 router.patch('/profile', updateAdminProfile);

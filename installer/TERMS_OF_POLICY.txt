@@ -1,0 +1,62 @@
+NEXORA - TERMS OF USE AND PRIVACY POLICY
+Version Date: 2026-03-19
+
+IMPORTANT:
+By selecting "I Agree" on the installer screen, you confirm that you have read,
+understood, and accepted this Terms of Use and Privacy Policy text.
+If you do not accept these terms, installation cannot continue.
+
+1) SERVICE SCOPE
+- Nexora is a team productivity app for project, task, and channel communication.
+- The app includes boards, cards, channels, mentions, assignments, and notifications.
+
+2) DATA WE PROCESS
+For core functionality, Nexora may process:
+- Account data: name, email, role, encrypted/hashed authentication data.
+- Profile data: avatar image and optional profile information.
+- Team/work data: project, team, board, column, card, and task records.
+- Communication data: channel messages, mentions, invite actions, join/leave/remove events.
+- Notification data: in-app alerts for tasks, channel invites, mentions, and status updates.
+- Technical data: session/token metadata, timestamps, and required system logs for operation.
+
+3) PURPOSE OF PROCESSING
+Your data is processed only to:
+- create and manage your account and session,
+- enable team collaboration and messaging,
+- route invites, mentions, and notifications,
+- provide security, access control, and auditability,
+- improve reliability and troubleshoot operational issues.
+
+4) DATA SHARING
+- Data is shared only with authorized users inside your workspace context
+  (for example, team members who have permission to view related content).
+- Data is not sold.
+- Limited third-party service providers may be used for infrastructure
+  (such as hosting, email, or technical delivery) under contractual safeguards.
+
+5) DATA RETENTION
+- Data is stored while your account/workspace remains active and as needed for
+  operational, legal, and security obligations.
+- After deletion requests or account closure, data may be removed or anonymized,
+  except where retention is legally required.
+
+6) USER RESPONSIBILITIES
+You agree that you will not:
+- upload or distribute unlawful, harmful, or unauthorized content,
+- attempt to bypass access controls or misuse another user's account,
+- use Nexora in violation of applicable law or company policy.
+
+7) SECURITY NOTICE
+- Reasonable technical and organizational measures are applied to protect data.
+- No internet-connected system can be guaranteed as 100 percent risk-free.
+- You are responsible for protecting your credentials and endpoint device access.
+
+8) UPDATES TO THESE TERMS
+- This document may be updated for legal, security, or product reasons.
+- Material changes may require renewed acceptance where applicable.
+
+9) CONTACT
+For privacy or legal questions, contact your workspace administrator
+or your designated Nexora support channel.
+
+By continuing installation, you acknowledge and accept these Terms.

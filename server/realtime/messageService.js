@@ -1,12 +1,15 @@
 const Message = require('../models/Message');
 const { verifyRoomAccess } = require('./roomAuth');
+const { encryptText } = require('../security/dataEncryption');
+const { sanitizePlainText } = require('../security/validation');
 
 const saveMessage = async ({ roomId, senderId, senderRole, message, type }) => {
+  const normalizedMessage = sanitizePlainText(message, { maxLength: 4000 });
   const entry = await Message.create({
     roomId,
     senderId,
     senderRole,
-    message,
+    message: encryptText(normalizedMessage),
     type,
     createdAt: Date.now(),
   });
@@ -16,7 +19,7 @@ const saveMessage = async ({ roomId, senderId, senderRole, message, type }) => {
     roomId,
     senderId,
     senderRole,
-    message,
+    message: normalizedMessage,
     type,
     createdAt: entry.createdAt,
   };

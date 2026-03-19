@@ -7,6 +7,8 @@ const UserModel = require('../models/User');
 const AdminUserProfile = require('../models/AdminUserProfile');
 const { findUserRoleInTeam } = require('../realtime/roomAuth');
 const { createNotificationsForUsers } = require('./notificationService');
+const { encryptText, decryptText } = require('../security/dataEncryption');
+const { sanitizePlainText } = require('../security/validation');
 
 const DELETED_MESSAGE_TEXT = 'This message was deleted.';
 
@@ -17,7 +19,7 @@ const mapChannelMessage = (msg) => ({
   id: msg._id.toString(),
   channelId: msg.channelId.toString(),
   senderId: msg.senderId.toString(),
-  message: msg.message,
+  message: decryptText(msg.message),
   type: msg.type || 'user',
   systemEvent: msg.systemEvent || '',
   systemMeta: msg.systemMeta || null,
@@ -42,6 +44,7 @@ const mapChannel = (channel, pinnedMessage = null) => ({
           return {
             userId,
             role: member?.role || '',
+            joinedAt: Number(member?.joinedAt) || null,
           };
         })
         .filter(Boolean)
@@ -146,16 +149,17 @@ const listChannelsForUser = async (userId) => {
 
 const createChannel = async ({ name, teamId, createdBy }) => {
   await ensureLeader(teamId, createdBy);
+  const now = Date.now();
 
   const channel = await Channel.create({
     name: name.trim(),
     teamId: toObjectId(teamId),
     createdBy: toObjectId(createdBy),
-    members: [{ userId: toObjectId(createdBy), role: 'team_leader' }],
+    members: [{ userId: toObjectId(createdBy), role: 'team_leader', joinedAt: now }],
     pinnedMessageId: null,
     pinnedBy: null,
     pinnedAt: null,
-    createdAt: Date.now(),
+    createdAt: now,
   });
 
   return mapChannel(channel);
@@ -230,8 +234,41 @@ const ensureChannelMember = async (channelId, userId) => {
   return channel;
 };
 
-const getChannelMessages = async (channelId, limit = 50) => {
-  const messages = await ChannelMessage.find({ channelId })
+const getChannelMessages = async ({ channelId, userId, limit = 50 }) => {
+  const channel = await ensureChannelMember(channelId, userId);
+  const member = (channel.members || []).find(
+    (entry) => entry?.userId?.toString() === String(userId)
+  );
+  const joinedAt = Number(member?.joinedAt);
+  const channelCreatedAt = Number(channel.createdAt);
+  let visibleFrom =
+    Number.isFinite(joinedAt) && joinedAt > 0
+      ? joinedAt
+      : Number.isFinite(channelCreatedAt) && channelCreatedAt > 0
+        ? channelCreatedAt
+        : 0;
+
+  if (!(Number.isFinite(joinedAt) && joinedAt > 0)) {
+    const joinedEvent = await ChannelMessage.findOne({
+      channelId: toObjectId(channelId),
+      type: 'system',
+      systemEvent: 'member_joined',
+      'systemMeta.joinedUserId': String(userId),
+    })
+      .sort({ createdAt: 1 })
+      .select('createdAt')
+      .lean();
+
+    const eventJoinedAt = Number(joinedEvent?.createdAt);
+    if (Number.isFinite(eventJoinedAt) && eventJoinedAt > 0) {
+      visibleFrom = eventJoinedAt;
+    }
+  }
+
+  const messages = await ChannelMessage.find({
+    channelId: toObjectId(channelId),
+    createdAt: { $gte: visibleFrom },
+  })
     .sort({ createdAt: -1 })
     .limit(limit)
     .lean();
@@ -241,12 +278,13 @@ const getChannelMessages = async (channelId, limit = 50) => {
 
 const saveChannelMessage = async ({ channelId, userId, message }) => {
   const channel = await ensureChannelMember(channelId, userId);
+  const normalizedMessage = sanitizePlainText(message, { maxLength: 4000 });
 
   const now = Date.now();
   const entry = await ChannelMessage.create({
     channelId: toObjectId(channelId),
     senderId: toObjectId(userId),
-    message,
+    message: encryptText(normalizedMessage),
     createdAt: now,
     updatedAt: now,
     isDeleted: false,
@@ -262,7 +300,7 @@ const saveChannelMessage = async ({ channelId, userId, message }) => {
   if (recipients.length) {
     const sender = await UserModel.model.findById(toObjectId(userId)).lean();
     const senderName = sender?.name || sender?.email || 'A teammate';
-    const preview = String(message || '').replace(/\s+/g, ' ').trim().slice(0, 140);
+    const preview = String(normalizedMessage || '').replace(/\s+/g, ' ').trim().slice(0, 140);
 
     await createNotificationsForUsers(recipients, {
       type: 'channel_message',
@@ -278,7 +316,7 @@ const saveChannelMessage = async ({ channelId, userId, message }) => {
     });
   }
 
-  const mentionTokens = parseMentionTokens(message);
+  const mentionTokens = parseMentionTokens(normalizedMessage);
   if (mentionTokens.length && memberUserIds.length) {
     const users = await UserModel.model
       .find({ _id: { $in: memberUserIds.map((id) => toObjectId(id)) } })
@@ -336,11 +374,12 @@ const saveChannelSystemMessage = async ({
   }
 
   const now = Date.now();
-  const normalizedMessage = String(message || '').trim() || 'A teammate joined the channel.';
+  const normalizedMessage =
+    sanitizePlainText(message, { maxLength: 4000 }) || 'A teammate joined the channel.';
   const entry = await ChannelMessage.create({
     channelId: toObjectId(channelId),
     senderId: toObjectId(userId),
-    message: normalizedMessage,
+    message: encryptText(normalizedMessage),
     type: 'system',
     systemEvent: String(systemEvent || ''),
     systemMeta: systemMeta && typeof systemMeta === 'object' ? systemMeta : null,
@@ -391,7 +430,7 @@ const updateChannelMessage = async ({ channelId, messageId, userId, message }) =
     throw error;
   }
 
-  entry.message = message.trim();
+  entry.message = encryptText(sanitizePlainText(message, { maxLength: 4000 }));
   entry.updatedAt = Date.now();
   await entry.save();
 
@@ -432,7 +471,7 @@ const deleteChannelMessage = async ({ channelId, messageId, userId }) => {
 
   if (!entry.isDeleted) {
     const now = Date.now();
-    entry.message = DELETED_MESSAGE_TEXT;
+    entry.message = encryptText(DELETED_MESSAGE_TEXT);
     entry.isDeleted = true;
     entry.deletedAt = now;
     entry.updatedAt = now;
@@ -518,10 +557,13 @@ const unpinChannelMessage = async ({ channelId, userId }) => {
   return mapChannel(updated);
 };
 
-const addMemberToChannel = async ({ channelId, userId, role }) => {
+const addMemberToChannel = async ({ channelId, userId, role, joinedAt = Date.now() }) => {
+  const safeJoinedAt = Number.isFinite(Number(joinedAt)) && Number(joinedAt) > 0
+    ? Number(joinedAt)
+    : Date.now();
   const channel = await Channel.findOneAndUpdate(
     { _id: channelId, 'members.userId': { $ne: toObjectId(userId) } },
-    { $push: { members: { userId: toObjectId(userId), role } } },
+    { $push: { members: { userId: toObjectId(userId), role, joinedAt: safeJoinedAt } } },
     { new: true }
   ).lean();
 
@@ -638,7 +680,7 @@ const acceptInvite = async ({ channelId, userId }) => {
     throw error;
   }
 
-  await addMemberToChannel({ channelId, userId, role });
+  await addMemberToChannel({ channelId, userId, role, joinedAt: Date.now() });
 
   return {
     invite,

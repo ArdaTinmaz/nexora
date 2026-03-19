@@ -20,10 +20,46 @@ const {
   deleteChannelMessage,
 } = require('../services/channelService');
 const { createNotification } = require('../services/notificationService');
+const { logSecurityEvent } = require('../services/auditLogService');
+const { checkSocketEventRateLimit } = require('../security/socketRateLimit');
+const { extractClientIpFromSocket, getUserAgentFromSocket } = require('../security/requestMeta');
+const {
+  ValidationError,
+  validateJoinRoomPayload,
+  validateLeaveRoomPayload,
+  validateSendMessagePayload,
+  validateAssignTaskPayload,
+  validateUpdateTaskStatusPayload,
+  validateCreateChannelPayload,
+  validateInvitePayload,
+  validateAcceptInvitePayload,
+  validateJoinChannelPayload,
+  validateLeaveChannelPayload,
+  validateSendChannelMessagePayload,
+  validateUpdateChannelMessagePayload,
+  validateDeleteChannelMessagePayload,
+  sanitizeSocketError,
+} = require('../security/socketPayloadSchemas');
 
 const getAllowedOrigins = () => {
   if (!process.env.CLIENT_URL) return ['http://localhost:3000'];
   return process.env.CLIENT_URL.split(',').map((item) => item.trim());
+};
+
+const SOCKET_EVENT_LIMITS = {
+  joinRoom: { maxEvents: 40, windowMs: 60 * 1000 },
+  sendMessage: { maxEvents: 30, windowMs: 10 * 1000 },
+  assignTask: { maxEvents: 20, windowMs: 60 * 1000 },
+  updateTaskStatus: { maxEvents: 30, windowMs: 60 * 1000 },
+  listChannels: { maxEvents: 40, windowMs: 60 * 1000 },
+  createChannel: { maxEvents: 15, windowMs: 60 * 1000 },
+  inviteToChannel: { maxEvents: 20, windowMs: 60 * 1000 },
+  acceptChannelInvite: { maxEvents: 20, windowMs: 60 * 1000 },
+  joinChannel: { maxEvents: 40, windowMs: 60 * 1000 },
+  leaveChannel: { maxEvents: 40, windowMs: 60 * 1000 },
+  sendChannelMessage: { maxEvents: 30, windowMs: 10 * 1000 },
+  updateChannelMessage: { maxEvents: 30, windowMs: 30 * 1000 },
+  deleteChannelMessage: { maxEvents: 30, windowMs: 30 * 1000 },
 };
 
 const startSocketServer = async () => {
@@ -43,88 +79,135 @@ const startSocketServer = async () => {
 
   io.on('connection', (socket) => {
     const userId = socket.user.id;
+    const socketIp = extractClientIpFromSocket(socket);
+    const socketUserAgent = getUserAgentFromSocket(socket);
     socket.join(`user:${userId}`);
 
-    socket.on('joinRoom', async ({ roomId, type }, callback = () => {}) => {
+    const getCallback = (callback) => (typeof callback === 'function' ? callback : () => {});
+
+    const enforceRateLimit = (eventName, callback) => {
+      const callbackSafe = getCallback(callback);
+      const limit = SOCKET_EVENT_LIMITS[eventName];
+      if (!limit) return { allowed: true };
+
+      const key = `${userId}:${eventName}`;
+      const result = checkSocketEventRateLimit({
+        key,
+        windowMs: limit.windowMs,
+        maxEvents: limit.maxEvents,
+      });
+
+      if (result.allowed) {
+        return { allowed: true };
+      }
+
+      const retryAfterSeconds = Math.max(1, Math.ceil(result.retryAfterMs / 1000));
+      callbackSafe({
+        error: 'Too many requests. Please wait and try again.',
+        retryAfterSeconds,
+      });
+      return { allowed: false };
+    };
+
+    const handleSocketError = (callback, err) => {
+      const callbackSafe = getCallback(callback);
+      const message =
+        err instanceof ValidationError ? sanitizeSocketError(err) : sanitizeSocketError(err);
+      callbackSafe({ error: message });
+    };
+
+    socket.on('joinRoom', async (payload, callback = () => {}) => {
+      if (!enforceRateLimit('joinRoom', callback).allowed) return;
+
       try {
+        const { roomId, type } = validateJoinRoomPayload(payload);
         const { authorized } = await verifyRoomAccess({ roomId, type, userId });
         if (!authorized) {
-          return callback({ error: 'Unauthorized' });
+          return getCallback(callback)({ error: 'Unauthorized' });
         }
         socket.join(roomId);
-        return callback({ ok: true });
+        return getCallback(callback)({ ok: true });
       } catch (err) {
-        return callback({ error: err.message });
+        return handleSocketError(callback, err);
       }
     });
 
-    socket.on('leaveRoom', ({ roomId }) => {
-      socket.leave(roomId);
+    socket.on('leaveRoom', (payload, callback = () => {}) => {
+      try {
+        const { roomId } = validateLeaveRoomPayload(payload);
+        socket.leave(roomId);
+        getCallback(callback)({ ok: true });
+      } catch (err) {
+        handleSocketError(callback, err);
+      }
     });
 
-    socket.on('sendMessage', async ({ roomId, message, type }, callback = () => {}) => {
+    socket.on('sendMessage', async (payload, callback = () => {}) => {
+      if (!enforceRateLimit('sendMessage', callback).allowed) return;
+
       try {
+        const { roomId, message, type } = validateSendMessagePayload(payload);
         const saved = await handleSendMessage({ roomId, message, type, userId });
         io.to(roomId).emit('receiveMessage', saved);
-        callback({ ok: true, message: saved });
+        getCallback(callback)({ ok: true, message: saved });
       } catch (err) {
-        callback({ error: err.message });
+        handleSocketError(callback, err);
       }
     });
 
-    socket.on(
-      'assignTask',
-      async ({ cardId, teamId, projectId, assignedTo }, callback = () => {}) => {
-        try {
-          const assignment = await createAssignment({
-            cardId,
-            teamId,
-            projectId,
-            assignedBy: userId,
-            assignedTo,
+    socket.on('assignTask', async (payload, callback = () => {}) => {
+      if (!enforceRateLimit('assignTask', callback).allowed) return;
+
+      try {
+        const { cardId, teamId, projectId, assignedTo } = validateAssignTaskPayload(payload);
+        const assignment = await createAssignment({
+          cardId,
+          teamId,
+          projectId,
+          assignedBy: userId,
+          assignedTo,
+        });
+
+        if (assignment.assignedTo !== userId) {
+          await createNotification({
+            userId: assignment.assignedTo,
+            type: 'task_assigned',
+            category: 'general',
+            title: 'New task assigned',
+            message: 'A task has been assigned to you.',
+            link: '/home/tasks',
+            meta: {
+              assignmentId: assignment.id,
+              cardId: assignment.cardId || null,
+              projectId: assignment.projectId || '',
+              teamId: assignment.teamId || '',
+            },
           });
-
-          if (assignment.assignedTo !== userId) {
-            await createNotification({
-              userId: assignment.assignedTo,
-              type: 'task_assigned',
-              category: 'general',
-              title: 'New task assigned',
-              message: 'A task has been assigned to you.',
-              link: '/home/tasks',
-              meta: {
-                assignmentId: assignment.id,
-                cardId: assignment.cardId || null,
-                projectId: assignment.projectId || '',
-                teamId: assignment.teamId || '',
-              },
-            });
-          }
-
-          io.to(`user:${assignedTo}`).emit('taskAssigned', assignment);
-          io.to(`team:${teamId}`).emit('taskAssigned', assignment);
-
-          callback({ ok: true, assignment });
-        } catch (err) {
-          callback({ error: err.message });
         }
-      }
-    );
 
-    socket.on(
-      'updateTaskStatus',
-      async ({ assignmentId, status }, callback = () => {}) => {
-        try {
-          const updated = await updateAssignmentStatus({ assignmentId, status, userId });
-          io.to(`team:${updated.teamId}`).emit('taskStatusUpdated', updated);
-          io.to(`user:${updated.assignedBy}`).emit('taskStatusUpdated', updated);
-          io.to(`user:${updated.assignedTo}`).emit('taskStatusUpdated', updated);
-          callback({ ok: true, assignment: updated });
-        } catch (err) {
-          callback({ error: err.message });
-        }
+        io.to(`user:${assignedTo}`).emit('taskAssigned', assignment);
+        io.to(`team:${teamId}`).emit('taskAssigned', assignment);
+
+        getCallback(callback)({ ok: true, assignment });
+      } catch (err) {
+        handleSocketError(callback, err);
       }
-    );
+    });
+
+    socket.on('updateTaskStatus', async (payload, callback = () => {}) => {
+      if (!enforceRateLimit('updateTaskStatus', callback).allowed) return;
+
+      try {
+        const { assignmentId, status } = validateUpdateTaskStatusPayload(payload);
+        const updated = await updateAssignmentStatus({ assignmentId, status, userId });
+        io.to(`team:${updated.teamId}`).emit('taskStatusUpdated', updated);
+        io.to(`user:${updated.assignedBy}`).emit('taskStatusUpdated', updated);
+        io.to(`user:${updated.assignedTo}`).emit('taskStatusUpdated', updated);
+        getCallback(callback)({ ok: true, assignment: updated });
+      } catch (err) {
+        handleSocketError(callback, err);
+      }
+    });
 
     socket.on('disconnect', () => {
       socket.leaveAll();
@@ -132,26 +215,34 @@ const startSocketServer = async () => {
 
     // Channel events (Slack-like)
     socket.on('listChannels', async (callback = () => {}) => {
+      if (!enforceRateLimit('listChannels', callback).allowed) return;
+
       try {
         const channels = await listChannelsForUser(userId);
-        callback({ ok: true, channels });
+        getCallback(callback)({ ok: true, channels });
       } catch (err) {
-        callback({ error: err.message });
+        handleSocketError(callback, err);
       }
     });
 
-    socket.on('createChannel', async ({ name, teamId }, callback = () => {}) => {
+    socket.on('createChannel', async (payload, callback = () => {}) => {
+      if (!enforceRateLimit('createChannel', callback).allowed) return;
+
       try {
+        const { name, teamId } = validateCreateChannelPayload(payload);
         const channel = await createChannel({ name, teamId, createdBy: userId });
         io.to(`team:${teamId}`).emit('channelCreated', channel);
-        callback({ ok: true, channel });
+        getCallback(callback)({ ok: true, channel });
       } catch (err) {
-        callback({ error: err.message });
+        handleSocketError(callback, err);
       }
     });
 
-    socket.on('inviteToChannel', async ({ channelId, userId: targetUserId }, callback = () => {}) => {
+    socket.on('inviteToChannel', async (payload, callback = () => {}) => {
+      if (!enforceRateLimit('inviteToChannel', callback).allowed) return;
+
       try {
+        const { channelId, userId: targetUserId } = validateInvitePayload(payload);
         const invite = await createInvite({
           channelId,
           fromUserId: userId,
@@ -169,7 +260,7 @@ const startSocketServer = async () => {
             inviteId: invite._id?.toString() || invite.id || '',
             fromUserId: userId,
           },
-          dedupKey: `channel-invite:${channelId}:${targetUserId}`,
+          dedupKey: `channel-invite:${invite._id?.toString() || invite.id || channelId}:${targetUserId}`,
         });
         io.to(`user:${targetUserId}`).emit('channelInvited', {
           id: invite._id?.toString() || invite.id,
@@ -177,14 +268,33 @@ const startSocketServer = async () => {
           channelName: invite.channelName || '',
           fromUserId: userId,
         });
-        callback({ ok: true });
+        await logSecurityEvent({
+          eventType: 'channel.invite_created',
+          category: 'channel',
+          severity: 'medium',
+          outcome: 'success',
+          actorType: 'user',
+          actorId: userId,
+          actorName: socket.user?.name || '',
+          targetType: 'user',
+          targetId: targetUserId,
+          resource: 'socket:inviteToChannel',
+          ip: socketIp,
+          userAgent: socketUserAgent,
+          message: 'Channel invite created via socket',
+          metadata: { channelId },
+        });
+        getCallback(callback)({ ok: true });
       } catch (err) {
-        callback({ error: err.message });
+        handleSocketError(callback, err);
       }
     });
 
-    socket.on('acceptChannelInvite', async ({ channelId }, callback = () => {}) => {
+    socket.on('acceptChannelInvite', async (payload, callback = () => {}) => {
+      if (!enforceRateLimit('acceptChannelInvite', callback).allowed) return;
+
       try {
+        const { channelId } = validateAcceptInvitePayload(payload);
         const result = await acceptInvite({ channelId, userId });
         const joinedAt = Date.now();
         const joinedUserName = socket.user?.name || 'User';
@@ -224,64 +334,92 @@ const startSocketServer = async () => {
             },
           });
         }
-        callback({ ok: true, channel: result.channel });
+        await logSecurityEvent({
+          eventType: 'channel.invite_accepted',
+          category: 'channel',
+          severity: 'low',
+          outcome: 'success',
+          actorType: 'user',
+          actorId: userId,
+          actorName: socket.user?.name || '',
+          resource: 'socket:acceptChannelInvite',
+          ip: socketIp,
+          userAgent: socketUserAgent,
+          message: 'Channel invite accepted via socket',
+          metadata: { channelId },
+        });
+        getCallback(callback)({ ok: true, channel: result.channel });
       } catch (err) {
-        callback({ error: err.message });
+        handleSocketError(callback, err);
       }
     });
 
-    socket.on('joinChannel', async ({ channelId }, callback = () => {}) => {
+    socket.on('joinChannel', async (payload, callback = () => {}) => {
+      if (!enforceRateLimit('joinChannel', callback).allowed) return;
+
       try {
+        const { channelId } = validateJoinChannelPayload(payload);
         await ensureChannelMember(channelId, userId);
         socket.join(`channel:${channelId}`);
-        callback({ ok: true });
+        getCallback(callback)({ ok: true });
       } catch (err) {
-        callback({ error: err.message });
+        handleSocketError(callback, err);
       }
     });
 
-    socket.on('leaveChannel', ({ channelId }) => {
-      socket.leave(`channel:${channelId}`);
+    socket.on('leaveChannel', (payload, callback = () => {}) => {
+      if (!enforceRateLimit('leaveChannel', callback).allowed) return;
+
+      try {
+        const { channelId } = validateLeaveChannelPayload(payload);
+        socket.leave(`channel:${channelId}`);
+        getCallback(callback)({ ok: true });
+      } catch (err) {
+        handleSocketError(callback, err);
+      }
     });
 
-    socket.on('sendChannelMessage', async ({ channelId, message }, callback = () => {}) => {
+    socket.on('sendChannelMessage', async (payload, callback = () => {}) => {
+      if (!enforceRateLimit('sendChannelMessage', callback).allowed) return;
+
       try {
+        const { channelId, message } = validateSendChannelMessagePayload(payload);
         const saved = await saveChannelMessage({ channelId, userId, message });
         io.to(`channel:${channelId}`).emit('receiveChannelMessage', saved);
-        callback({ ok: true, message: saved });
+        getCallback(callback)({ ok: true, message: saved });
       } catch (err) {
-        callback({ error: err.message });
+        handleSocketError(callback, err);
       }
     });
 
-    socket.on(
-      'updateChannelMessage',
-      async ({ channelId, messageId, message }, callback = () => {}) => {
-        try {
-          if (!message || !message.trim()) {
-            return callback({ error: 'Message is required' });
-          }
-          const updated = await updateChannelMessage({
-            channelId,
-            messageId,
-            userId,
-            message: message.trim(),
-          });
-          io.to(`channel:${channelId}`).emit('channelMessageUpdated', updated);
-          callback({ ok: true, message: updated });
-        } catch (err) {
-          callback({ error: err.message });
-        }
-      }
-    );
+    socket.on('updateChannelMessage', async (payload, callback = () => {}) => {
+      if (!enforceRateLimit('updateChannelMessage', callback).allowed) return;
 
-    socket.on('deleteChannelMessage', async ({ channelId, messageId }, callback = () => {}) => {
       try {
+        const { channelId, messageId, message } = validateUpdateChannelMessagePayload(payload);
+        const updated = await updateChannelMessage({
+          channelId,
+          messageId,
+          userId,
+          message,
+        });
+        io.to(`channel:${channelId}`).emit('channelMessageUpdated', updated);
+        getCallback(callback)({ ok: true, message: updated });
+      } catch (err) {
+        handleSocketError(callback, err);
+      }
+    });
+
+    socket.on('deleteChannelMessage', async (payload, callback = () => {}) => {
+      if (!enforceRateLimit('deleteChannelMessage', callback).allowed) return;
+
+      try {
+        const { channelId, messageId } = validateDeleteChannelMessagePayload(payload);
         const deleted = await deleteChannelMessage({ channelId, messageId, userId });
         io.to(`channel:${channelId}`).emit('channelMessageDeleted', deleted);
-        callback({ ok: true, message: deleted });
+        getCallback(callback)({ ok: true, message: deleted });
       } catch (err) {
-        callback({ error: err.message });
+        handleSocketError(callback, err);
       }
     });
   });

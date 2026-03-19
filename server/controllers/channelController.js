@@ -15,10 +15,12 @@ const {
   acceptInvite,
   leaveChannel: leaveChannelService,
   removeChannelMember,
-  ensureChannelMember,
 } = require('../services/channelService');
 const { createNotification } = require('../services/notificationService');
 const UserModel = require('../models/User');
+const { logSecurityEvent } = require('../services/auditLogService');
+const { extractClientIpFromRequest, getUserAgentFromRequest } = require('../security/requestMeta');
+const { requireString, requireObjectId } = require('../security/validation');
 
 exports.getChannels = async (req, res, next) => {
   try {
@@ -31,10 +33,8 @@ exports.getChannels = async (req, res, next) => {
 
 exports.createChannel = async (req, res, next) => {
   try {
-    const { name, teamId } = req.body;
-    if (!name || !teamId) {
-      return res.status(400).json({ message: 'Kanal adı ve takım zorunlu' });
-    }
+    const name = requireString(req.body?.name, 'Kanal adı', { max: 120 });
+    const teamId = requireObjectId(req.body?.teamId, 'teamId');
     const channel = await createChannel({ name, teamId, createdBy: req.user.id });
 
     const io = req.app.get('io');
@@ -50,15 +50,12 @@ exports.createChannel = async (req, res, next) => {
 
 exports.updateChannel = async (req, res, next) => {
   try {
-    const { channelId } = req.params;
-    const { name } = req.body;
-    if (!name || !name.trim()) {
-      return res.status(400).json({ message: 'Kanal adı zorunlu' });
-    }
+    const channelId = requireObjectId(req.params?.channelId, 'channelId');
+    const name = requireString(req.body?.name, 'Kanal adı', { max: 120 });
 
     const updated = await updateChannelService({
       channelId,
-      name: name.trim(),
+      name,
       userId: req.user.id,
     });
 
@@ -75,7 +72,7 @@ exports.updateChannel = async (req, res, next) => {
 
 exports.deleteChannel = async (req, res, next) => {
   try {
-    const { channelId } = req.params;
+    const channelId = requireObjectId(req.params?.channelId, 'channelId');
     const deleted = await deleteChannelService({
       channelId,
       userId: req.user.id,
@@ -95,9 +92,12 @@ exports.deleteChannel = async (req, res, next) => {
 
 exports.getMessages = async (req, res, next) => {
   try {
-    const { channelId } = req.params;
-    await ensureChannelMember(channelId, req.user.id);
-    const messages = await getChannelMessages(channelId, Number(req.query.limit) || 50);
+    const channelId = requireObjectId(req.params?.channelId, 'channelId');
+    const messages = await getChannelMessages({
+      channelId,
+      userId: req.user.id,
+      limit: Number(req.query.limit) || 50,
+    });
     res.json(messages);
   } catch (error) {
     next(error);
@@ -106,16 +106,13 @@ exports.getMessages = async (req, res, next) => {
 
 exports.sendMessage = async (req, res, next) => {
   try {
-    const { channelId } = req.params;
-    const { message } = req.body;
-    if (!message || !message.trim()) {
-      return res.status(400).json({ message: 'Mesaj zorunlu' });
-    }
+    const channelId = requireObjectId(req.params?.channelId, 'channelId');
+    const message = requireString(req.body?.message, 'Mesaj', { max: 4000 });
 
     const saved = await saveChannelMessage({
       channelId,
       userId: req.user.id,
-      message: message.trim(),
+      message,
     });
 
     const io = req.app.get('io');
@@ -131,17 +128,15 @@ exports.sendMessage = async (req, res, next) => {
 
 exports.updateMessage = async (req, res, next) => {
   try {
-    const { channelId, messageId } = req.params;
-    const { message } = req.body;
-    if (!message || !message.trim()) {
-      return res.status(400).json({ message: 'Mesaj zorunlu' });
-    }
+    const channelId = requireObjectId(req.params?.channelId, 'channelId');
+    const messageId = requireObjectId(req.params?.messageId, 'messageId');
+    const message = requireString(req.body?.message, 'Mesaj', { max: 4000 });
 
     const updated = await updateChannelMessage({
       channelId,
       messageId,
       userId: req.user.id,
-      message: message.trim(),
+      message,
     });
 
     const io = req.app.get('io');
@@ -157,7 +152,8 @@ exports.updateMessage = async (req, res, next) => {
 
 exports.deleteMessage = async (req, res, next) => {
   try {
-    const { channelId, messageId } = req.params;
+    const channelId = requireObjectId(req.params?.channelId, 'channelId');
+    const messageId = requireObjectId(req.params?.messageId, 'messageId');
     const deleted = await deleteChannelMessage({
       channelId,
       messageId,
@@ -177,7 +173,8 @@ exports.deleteMessage = async (req, res, next) => {
 
 exports.pinMessage = async (req, res, next) => {
   try {
-    const { channelId, messageId } = req.params;
+    const channelId = requireObjectId(req.params?.channelId, 'channelId');
+    const messageId = requireObjectId(req.params?.messageId, 'messageId');
     const updatedChannel = await pinChannelMessage({
       channelId,
       messageId,
@@ -197,7 +194,7 @@ exports.pinMessage = async (req, res, next) => {
 
 exports.unpinMessage = async (req, res, next) => {
   try {
-    const { channelId } = req.params;
+    const channelId = requireObjectId(req.params?.channelId, 'channelId');
     const updatedChannel = await unpinChannelMessage({
       channelId,
       userId: req.user.id,
@@ -225,11 +222,8 @@ exports.listInvites = async (req, res, next) => {
 
 exports.inviteUser = async (req, res, next) => {
   try {
-    const { channelId } = req.params;
-    const { userId } = req.body;
-    if (!userId) {
-      return res.status(400).json({ message: 'userId zorunlu' });
-    }
+    const channelId = requireObjectId(req.params?.channelId, 'channelId');
+    const userId = requireObjectId(req.body?.userId, 'userId');
 
     const invite = await createInvite({
       channelId,
@@ -249,7 +243,7 @@ exports.inviteUser = async (req, res, next) => {
         inviteId: invite._id?.toString() || invite.id || '',
         fromUserId: req.user.id,
       },
-      dedupKey: `channel-invite:${channelId}:${userId}`,
+      dedupKey: `channel-invite:${invite._id?.toString() || invite.id || channelId}:${userId}`,
     });
 
     const io = req.app.get('io');
@@ -261,6 +255,25 @@ exports.inviteUser = async (req, res, next) => {
         fromUserId: req.user.id,
       });
     }
+
+    await logSecurityEvent({
+      eventType: 'channel.invite_created',
+      category: 'channel',
+      severity: 'medium',
+      outcome: 'success',
+      actorType: 'user',
+      actorId: req.user.id,
+      actorName: req.user?.name || '',
+      targetType: 'user',
+      targetId: userId,
+      resource: `/api/channels/${channelId}/invite`,
+      ip: extractClientIpFromRequest(req),
+      userAgent: getUserAgentFromRequest(req),
+      message: 'Channel invite created',
+      metadata: {
+        channelId,
+      },
+    });
 
     res.status(201).json({
       id: invite._id?.toString() || invite.id,
@@ -278,7 +291,7 @@ exports.inviteUser = async (req, res, next) => {
 
 exports.acceptInvite = async (req, res, next) => {
   try {
-    const { channelId } = req.params;
+    const channelId = requireObjectId(req.params?.channelId, 'channelId');
     const result = await acceptInvite({ channelId, userId: req.user.id });
     const joinedAt = Date.now();
     const joinedUserName = req.user?.name || 'User';
@@ -326,6 +339,23 @@ exports.acceptInvite = async (req, res, next) => {
       });
     }
 
+    await logSecurityEvent({
+      eventType: 'channel.invite_accepted',
+      category: 'channel',
+      severity: 'low',
+      outcome: 'success',
+      actorType: 'user',
+      actorId: req.user.id,
+      actorName: req.user?.name || '',
+      resource: `/api/channels/${channelId}/accept`,
+      ip: extractClientIpFromRequest(req),
+      userAgent: getUserAgentFromRequest(req),
+      message: 'Channel invite accepted',
+      metadata: {
+        channelId,
+      },
+    });
+
     res.json({
       channel: result.channel,
       invite: {
@@ -340,7 +370,7 @@ exports.acceptInvite = async (req, res, next) => {
 
 exports.leaveChannel = async (req, res, next) => {
   try {
-    const { channelId } = req.params;
+    const channelId = requireObjectId(req.params?.channelId, 'channelId');
     const leftAt = Date.now();
     const leftUserName = req.user?.name || 'User';
     const leftUserAvatarURL = req.user?.avatarURL || '';
@@ -380,6 +410,24 @@ exports.leaveChannel = async (req, res, next) => {
       io.in(`user:${req.user.id}`).socketsLeave(`channel:${channelId}`);
     }
 
+    await logSecurityEvent({
+      eventType: 'channel.member_left',
+      category: 'channel',
+      severity: 'low',
+      outcome: 'success',
+      actorType: 'user',
+      actorId: req.user.id,
+      actorName: req.user?.name || '',
+      resource: `/api/channels/${channelId}/leave`,
+      ip: extractClientIpFromRequest(req),
+      userAgent: getUserAgentFromRequest(req),
+      message: 'User left channel',
+      metadata: {
+        channelId,
+        channelName: result.channelName,
+      },
+    });
+
     res.json({
       ok: true,
       channelId,
@@ -392,10 +440,10 @@ exports.leaveChannel = async (req, res, next) => {
 
 exports.removeMember = async (req, res, next) => {
   try {
-    const { channelId, userId } = req.params;
+    const channelId = requireObjectId(req.params?.channelId, 'channelId');
+    const userId = requireObjectId(req.params?.userId, 'userId');
     const removedAt = Date.now();
     const actorName = req.user?.name || 'User';
-    const actorRoleLabel = 'team lead';
 
     const targetUser = await UserModel.findUserById(userId);
     const targetName = targetUser?.name || 'User';
@@ -409,7 +457,7 @@ exports.removeMember = async (req, res, next) => {
     const systemMessage = await saveChannelSystemMessage({
       channelId,
       userId: req.user.id,
-      message: `${actorName} ${result.actorRoleLabel || actorRoleLabel} removed ${targetName}.`,
+      message: `Team Lead ${actorName} removed ${targetName}.`,
       systemEvent: 'member_removed',
       systemMeta: {
         removedUserId: userId,
@@ -457,6 +505,26 @@ exports.removeMember = async (req, res, next) => {
       meta: {
         channelId,
         removedByUserId: req.user.id,
+      },
+    });
+
+    await logSecurityEvent({
+      eventType: 'channel.member_removed',
+      category: 'channel',
+      severity: 'high',
+      outcome: 'success',
+      actorType: 'user',
+      actorId: req.user.id,
+      actorName: req.user?.name || '',
+      targetType: 'user',
+      targetId: userId,
+      resource: `/api/channels/${channelId}/members/${userId}`,
+      ip: extractClientIpFromRequest(req),
+      userAgent: getUserAgentFromRequest(req),
+      message: 'Channel member removed',
+      metadata: {
+        channelId,
+        channelName: result.channelName,
       },
     });
 

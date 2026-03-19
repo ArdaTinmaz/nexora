@@ -167,13 +167,13 @@ const ensureDeadlineReminderNotificationsForUser = async (userId) => {
 const listNotificationsForUser = async ({ userId, limit = 80 }) => {
   const normalizedUserId = String(userId || '').trim();
   if (!mongoose.Types.ObjectId.isValid(normalizedUserId)) {
-    return { notifications: [], unreadCount: 0, messageUnreadCount: 0 };
+    return { notifications: [], unreadCount: 0, messageUnreadCount: 0, chatUnreadCount: 0 };
   }
 
   await ensureDeadlineReminderNotificationsForUser(normalizedUserId);
 
   const safeLimit = Math.max(1, Math.min(Number(limit) || 80, 300));
-  const [docs, unreadCount, messageUnreadCount] = await Promise.all([
+  const [docs, unreadCount, messageUnreadCount, chatUnreadCount] = await Promise.all([
     Notification.find({ userId: toObjectId(normalizedUserId) })
       .sort({ createdAt: -1, _id: -1 })
       .limit(safeLimit)
@@ -187,12 +187,21 @@ const listNotificationsForUser = async ({ userId, limit = 80 }) => {
       isRead: false,
       category: 'message',
     }),
+    Notification.countDocuments({
+      userId: toObjectId(normalizedUserId),
+      isRead: false,
+      $or: [
+        { category: 'message' },
+        { type: 'channel_invite_received' },
+      ],
+    }),
   ]);
 
   return {
     notifications: docs.map(mapNotification),
     unreadCount,
     messageUnreadCount,
+    chatUnreadCount,
   };
 };
 

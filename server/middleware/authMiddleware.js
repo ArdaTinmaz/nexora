@@ -21,6 +21,15 @@ const authMiddleware = async (req, res, next) => {
     if (!user) {
       return res.status(401).json({ message: 'Unauthorized' });
     }
+    const tokenSessionVersion = Number.isFinite(Number(decoded.sessionVersion))
+      ? Number(decoded.sessionVersion)
+      : 0;
+    const currentSessionVersion = Number.isFinite(Number(user.sessionVersion))
+      ? Number(user.sessionVersion)
+      : 0;
+    if (tokenSessionVersion !== currentSessionVersion) {
+      return res.status(401).json({ message: 'Unauthorized' });
+    }
 
     req.user = user;
     next();

@@ -12,6 +12,7 @@ const projectRoutes = require('./routes/projectRoutes');
 const adminRoutes = require('./routes/adminRoutes');
 const taskRoutes = require('./routes/taskRoutes');
 const notificationRoutes = require('./routes/notificationRoutes');
+const requestPayloadSecurityMiddleware = require('./middleware/requestPayloadSecurityMiddleware');
 const {
   ensureUploadsDir,
   getPrimaryUploadsDir,
@@ -47,6 +48,7 @@ const buildCorsConfig = () => {
 app.use(cors(buildCorsConfig()));
 app.use(express.json({ limit: '10mb' }));
 app.use(morgan('dev'));
+app.use(requestPayloadSecurityMiddleware);
 ensureUploadsDir();
 migrateLegacyUploads();
 app.use('/uploads', express.static(getPrimaryUploadsDir()));

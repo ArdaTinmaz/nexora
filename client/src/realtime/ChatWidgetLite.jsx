@@ -6,6 +6,7 @@ import { notificationApi } from '../api/notificationApi';
 import { teamApi } from '../api/teamApi';
 import userApi from '../api/userApi';
 import { getSession } from '../desktop/session';
+import { showNotification } from '../desktop/notifications';
 import { API_ORIGIN } from '../config';
 import './ChatWidgetLite.css';
 
@@ -83,8 +84,10 @@ const ChatWidgetLite = () => {
   const [newChannelName, setNewChannelName] = useState('');
   const [newChannelTeam, setNewChannelTeam] = useState('');
   const [channelSearch, setChannelSearch] = useState('');
-  const [inviteUserId, setInviteUserId] = useState('');
-  const [removeUserId, setRemoveUserId] = useState('');
+  const [memberModalMode, setMemberModalMode] = useState('');
+  const [memberModalUserId, setMemberModalUserId] = useState('');
+  const [memberModalLoading, setMemberModalLoading] = useState(false);
+  const [memberModalError, setMemberModalError] = useState('');
   const [channelError, setChannelError] = useState('');
   const [actionError, setActionError] = useState('');
   const [channelNotice, setChannelNotice] = useState('');
@@ -115,7 +118,14 @@ const ChatWidgetLite = () => {
   const loadMessageUnread = useCallback(async () => {
     try {
       const data = await notificationApi.list(1);
-      setUnread(Number(data?.messageUnreadCount) || 0);
+      setUnread(
+        Number(
+          data?.chatUnreadCount ??
+            data?.messageUnreadCount ??
+            data?.unreadCount ??
+            0
+        ) || 0
+      );
     } catch (err) {
       // eslint-disable-next-line no-console
       console.error(err);
@@ -222,6 +232,22 @@ const ChatWidgetLite = () => {
     });
     return list;
   }, [teamMembers, currentUserId, channelMemberIds]);
+
+  const memberModalOptions = useMemo(() => {
+    if (memberModalMode === 'add') {
+      return inviteOptions.map((option) => ({
+        id: option.id,
+        label: option.label,
+      }));
+    }
+    if (memberModalMode === 'remove') {
+      return removableMembers.map((member) => ({
+        id: member.id,
+        label: `${member.name} (${member.role || 'member'})`,
+      }));
+    }
+    return [];
+  }, [memberModalMode, inviteOptions, removableMembers]);
 
   const currentTeamRole = useMemo(() => {
     if (!selectedChannel) return '';
@@ -350,6 +376,14 @@ const ChatWidgetLite = () => {
   }, [open]);
 
   useEffect(() => {
+    if (open) return;
+    setMemberModalMode('');
+    setMemberModalUserId('');
+    setMemberModalError('');
+    setMemberModalLoading(false);
+  }, [open]);
+
+  useEffect(() => {
     if (!leaderTeams.length) {
       setNewChannelTeam('');
       return;
@@ -384,7 +418,10 @@ const ChatWidgetLite = () => {
   }, [selectedChannel]);
 
   useEffect(() => {
-    setRemoveUserId('');
+    if (selectedChannel?.id) return;
+    setMemberModalMode('');
+    setMemberModalUserId('');
+    setMemberModalError('');
   }, [selectedChannel?.id]);
 
   useEffect(() => {
@@ -409,11 +446,19 @@ const ChatWidgetLite = () => {
 
     const handleChannelInvited = (invite) => {
       if (!invite?.id) return;
+      let added = false;
       setInvites((prev) => {
         const exists = prev.some((entry) => entry.id === invite.id);
         if (exists) return prev;
+        added = true;
         return [...prev, invite];
       });
+      if (!added) return;
+      setUnread((count) => count + 1);
+      showNotification({
+        title: 'Kanal daveti',
+        body: `#${invite.channelName || 'kanal'} icin davetiniz var.`,
+      }).catch(() => {});
     };
 
     const handleChannelUpdated = (channel) => {
@@ -556,8 +601,9 @@ const ChatWidgetLite = () => {
     setEditingMessageText('');
     setActionError('');
     setChannelNotice('');
-    setInviteUserId('');
-    setRemoveUserId('');
+    setMemberModalMode('');
+    setMemberModalUserId('');
+    setMemberModalError('');
 
     const loadHistory = async (limit = 50) => {
       const history = await channelApi.messages(channel.id, limit);
@@ -710,14 +756,41 @@ const ChatWidgetLite = () => {
     }
   };
 
-  const sendInvite = async () => {
-    if (!inviteUserId.trim() || !selectedChannel) return;
+  const openMemberModal = (mode) => {
+    if (!selectedChannel?.id || !canInvite || !isCurrentUserInSelectedChannel) return;
+    const options = mode === 'add' ? inviteOptions : removableMembers;
+    setMemberModalMode(mode);
+    setMemberModalUserId(options[0]?.id || '');
+    setMemberModalError('');
+  };
+
+  const closeMemberModal = () => {
+    if (memberModalLoading) return;
+    setMemberModalMode('');
+    setMemberModalUserId('');
+    setMemberModalError('');
+  };
+
+  const confirmMemberModal = async () => {
+    if (!selectedChannel?.id || !memberModalMode || !memberModalUserId || memberModalLoading) return;
+
+    setMemberModalLoading(true);
+    setMemberModalError('');
     try {
-      await channelApi.inviteUser(selectedChannel.id, inviteUserId.trim());
-      setInviteUserId('');
+      if (memberModalMode === 'add') {
+        await channelApi.inviteUser(selectedChannel.id, memberModalUserId);
+      } else if (memberModalMode === 'remove') {
+        setRemovingMember(true);
+        await channelApi.removeMember(selectedChannel.id, memberModalUserId);
+      }
       setActionError('');
+      setMemberModalLoading(false);
+      setRemovingMember(false);
+      closeMemberModal();
     } catch (err) {
-      setActionError(err.message);
+      setMemberModalLoading(false);
+      setRemovingMember(false);
+      setMemberModalError(err.message || 'Action could not be completed.');
     }
   };
 
@@ -743,20 +816,6 @@ const ChatWidgetLite = () => {
       setActionError(err.message || 'Could not leave channel.');
     } finally {
       setLeavingChannel(false);
-    }
-  };
-
-  const removeSelectedMember = async () => {
-    if (!selectedChannel?.id || !removeUserId || removingMember || leavingChannel) return;
-    setRemovingMember(true);
-    try {
-      await channelApi.removeMember(selectedChannel.id, removeUserId);
-      setRemoveUserId('');
-      setActionError('');
-    } catch (err) {
-      setActionError(err.message || 'Member could not be removed.');
-    } finally {
-      setRemovingMember(false);
     }
   };
 
@@ -1036,7 +1095,21 @@ const ChatWidgetLite = () => {
         onClick={() => setOpen((prev) => !prev)}
         aria-label="Open chat"
       >
-        💬
+        <svg
+          className="chat-widget-lite-button-icon"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2.1"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          aria-hidden="true"
+        >
+          <path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z" />
+          <path d="M8.5 12h.01" />
+          <path d="M12 12h.01" />
+          <path d="M15.5 12h.01" />
+        </svg>
         {unread > 0 && (
           <span className="chat-widget-lite-badge">{unread > 99 ? '99+' : unread}</span>
         )}
@@ -1175,40 +1248,27 @@ const ChatWidgetLite = () => {
                 <div className="chat-widget-lite-chat-header">
                   <div className="chat-widget-lite-chat-title"># {selectedChannel.name}</div>
                   <div className="chat-widget-lite-chat-header-actions">
-                    {canInvite && (
-                      <div className="chat-widget-lite-invite">
-                        <select
-                          value={inviteUserId}
-                          onChange={(e) => setInviteUserId(e.target.value)}
-                          disabled={loadingMembers || inviteOptions.length === 0 || !isCurrentUserInSelectedChannel}
-                        >
-                          <option value="">Add user</option>
-                          {inviteOptions.map((user) => (
-                            <option key={user.id} value={user.id}>
-                              {user.label}
-                            </option>
-                          ))}
-                        </select>
-                        <button onClick={sendInvite} disabled={!inviteUserId || !isCurrentUserInSelectedChannel}>
-                          Add
-                        </button>
-                        <select
-                          value={removeUserId}
-                          onChange={(e) => setRemoveUserId(e.target.value)}
-                          disabled={loadingMembers || removableMembers.length === 0 || !isCurrentUserInSelectedChannel}
-                        >
-                          <option value="">Remove user</option>
-                          {removableMembers.map((member) => (
-                            <option key={member.id} value={member.id}>
-                              {member.name}
-                            </option>
-                          ))}
-                        </select>
+                    {canInvite && isCurrentUserInSelectedChannel && (
+                      <div className="chat-widget-lite-user-actions">
                         <button
-                          onClick={removeSelectedMember}
-                          disabled={!removeUserId || !isCurrentUserInSelectedChannel || removingMember || leavingChannel}
+                          type="button"
+                          className="chat-widget-lite-user-action-button"
+                          title="Add user"
+                          aria-label="Add user"
+                          onClick={() => openMemberModal('add')}
+                          disabled={loadingMembers || inviteOptions.length === 0}
                         >
-                          {removingMember ? 'Removing...' : 'Remove'}
+                          +
+                        </button>
+                        <button
+                          type="button"
+                          className="chat-widget-lite-user-action-button"
+                          title="Remove user"
+                          aria-label="Remove user"
+                          onClick={() => openMemberModal('remove')}
+                          disabled={loadingMembers || removableMembers.length === 0 || removingMember || leavingChannel}
+                        >
+                          -
                         </button>
                       </div>
                     )}
@@ -1487,6 +1547,69 @@ const ChatWidgetLite = () => {
               </div>
             )}
           </section>
+
+          {memberModalMode && (
+            <div className="chat-widget-lite-modal-overlay">
+              <div className="chat-widget-lite-modal chat-widget-lite-member-modal">
+                <div className="chat-widget-lite-modal-title">
+                  {memberModalMode === 'add' ? 'Add user' : 'Remove user'}
+                </div>
+                <div className="chat-widget-lite-modal-text">
+                  {memberModalMode === 'add'
+                    ? `Select a user to add to #${selectedChannel?.name || ''}.`
+                    : `Select a user to remove from #${selectedChannel?.name || ''}.`}
+                </div>
+                {loadingMembers ? (
+                  <div className="chat-widget-lite-modal-empty">Loading users...</div>
+                ) : memberModalOptions.length === 0 ? (
+                  <div className="chat-widget-lite-modal-empty">
+                    {memberModalMode === 'add'
+                      ? 'No available user to add.'
+                      : 'No removable user in this channel.'}
+                  </div>
+                ) : (
+                  <div className="chat-widget-lite-modal-option-list">
+                    {memberModalOptions.map((option) => (
+                      <button
+                        key={option.id}
+                        type="button"
+                        className={`chat-widget-lite-modal-option ${
+                          memberModalUserId === option.id ? 'active' : ''
+                        }`}
+                        onClick={() => setMemberModalUserId(option.id)}
+                      >
+                        {option.label}
+                      </button>
+                    ))}
+                  </div>
+                )}
+                {memberModalError && <div className="chat-widget-lite-error-text">{memberModalError}</div>}
+                <div className="chat-widget-lite-modal-actions">
+                  <button type="button" onClick={closeMemberModal} disabled={memberModalLoading}>
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    onClick={confirmMemberModal}
+                    disabled={
+                      memberModalLoading ||
+                      loadingMembers ||
+                      !memberModalUserId ||
+                      memberModalOptions.length === 0
+                    }
+                  >
+                    {memberModalLoading
+                      ? memberModalMode === 'add'
+                        ? 'Adding...'
+                        : 'Removing...'
+                      : memberModalMode === 'add'
+                        ? 'Add'
+                        : 'Remove'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
 
           {channelModalMode && (
             <div className="chat-widget-lite-modal-overlay">

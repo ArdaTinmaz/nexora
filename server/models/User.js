@@ -1,6 +1,7 @@
 const mongoose = require('mongoose');
 const bcrypt = require('bcryptjs');
 const normalizeAvatarUrl = require('../utils/normalizeAvatarUrl');
+const { encryptText, decryptText } = require('../security/dataEncryption');
 
 const { Schema } = mongoose;
 
@@ -16,6 +17,7 @@ const userSchema = new Schema({
   avatarURL: { type: String, default: '' },
   theme: { type: String, enum: ['light', 'dark', 'violet'], default: 'light' },
   refreshTokenHash: { type: String, default: null },
+  sessionVersion: { type: Number, default: 0 },
   passwordResetTokenHash: { type: String, default: null },
   passwordResetTokenExpiry: { type: Number, default: null },
   pendingEmail: { type: String, default: null },
@@ -43,9 +45,10 @@ const mapUserDoc = (doc) => {
     avatarURL: normalizeAvatarUrl(data.avatarURL),
     theme: data.theme || 'light',
     refreshTokenHash: data.refreshTokenHash,
+    sessionVersion: Number.isFinite(Number(data.sessionVersion)) ? Number(data.sessionVersion) : 0,
     passwordResetTokenHash: data.passwordResetTokenHash,
     passwordResetTokenExpiry: data.passwordResetTokenExpiry,
-    pendingEmail: data.pendingEmail,
+    pendingEmail: data.pendingEmail ? decryptText(data.pendingEmail) : null,
     emailVerificationTokenHash: data.emailVerificationTokenHash,
     emailVerificationTokenExpiry: data.emailVerificationTokenExpiry,
     createdAt: data.createdAt,
@@ -54,6 +57,14 @@ const mapUserDoc = (doc) => {
 };
 
 const isValidObjectId = (id) => mongoose.Types.ObjectId.isValid(id);
+
+const transformSensitiveUpdateFields = (updates = {}) => {
+  const next = { ...updates };
+  if (Object.prototype.hasOwnProperty.call(next, 'pendingEmail')) {
+    next.pendingEmail = next.pendingEmail ? encryptText(String(next.pendingEmail)) : null;
+  }
+  return next;
+};
 
 const createUser = async ({ name, email, password, avatarURL = '', role = 'developer' }) => {
   const hashedPassword = await bcrypt.hash(password, 10);
@@ -104,6 +115,7 @@ const updateUser = async (id, updates) => {
     'avatarURL',
     'theme',
     'refreshTokenHash',
+    'sessionVersion',
     'passwordResetTokenHash',
     'passwordResetTokenExpiry',
     'pendingEmail',
@@ -116,14 +128,15 @@ const updateUser = async (id, updates) => {
       ([key, value]) => allowedFields.includes(key) && typeof value !== 'undefined'
     )
   );
+  const transformedUpdates = transformSensitiveUpdateFields(nextUpdates);
 
-  if (!Object.keys(nextUpdates).length) {
+  if (!Object.keys(transformedUpdates).length) {
     return findUserById(id);
   }
 
-  nextUpdates.updatedAt = Date.now();
+  transformedUpdates.updatedAt = Date.now();
 
-  const user = await User.findByIdAndUpdate(id, nextUpdates, {
+  const user = await User.findByIdAndUpdate(id, transformedUpdates, {
     new: true,
     runValidators: true,
   }).lean();
@@ -134,6 +147,26 @@ const updateUser = async (id, updates) => {
 const updateRefreshToken = async (id, refreshTokenHash) => updateUser(id, { refreshTokenHash });
 
 const clearRefreshToken = async (id) => updateUser(id, { refreshTokenHash: null });
+
+const incrementSessionVersion = async (id) => {
+  if (!isValidObjectId(id)) {
+    return null;
+  }
+
+  const user = await User.findByIdAndUpdate(
+    id,
+    { $inc: { sessionVersion: 1 }, $set: { updatedAt: Date.now() } },
+    { new: true }
+  ).lean();
+
+  return mapUserDoc(user);
+};
+
+const invalidateUserSessions = async (id) => {
+  const user = await incrementSessionVersion(id);
+  if (!user) return null;
+  return updateUser(id, { refreshTokenHash: null });
+};
 
 const setPasswordResetToken = async (id, tokenHash, expiry) =>
   updateUser(id, {
@@ -191,6 +224,8 @@ module.exports = {
   findUserByResetToken,
   updateRefreshToken,
   clearRefreshToken,
+  incrementSessionVersion,
+  invalidateUserSessions,
   setPasswordResetToken,
   clearPasswordResetToken,
   updatePassword,

@@ -12,6 +12,14 @@
   cursor: pointer;
   box-shadow: 0 12px 26px rgba(15, 23, 42, 0.45);
   z-index: 9999;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.chat-widget-lite-button-icon {
+  width: 31px;
+  height: 31px;
 }
 
 .chat-widget-lite-badge {
@@ -48,6 +56,7 @@
   display: flex;
   flex-direction: column;
   border-right: 1px solid #2b2d33;
+  min-height: 0;
 }
 
 .chat-widget-lite-left-header {
@@ -142,6 +151,7 @@
 .chat-widget-lite-channel-list {
   padding: 12px 8px 12px 8px;
   flex: 1;
+  min-height: 0;
   overflow-y: auto;
   display: flex;
   flex-direction: column;
@@ -190,11 +200,17 @@
   font-weight: 600;
   margin-bottom: 3px;
   font-size: 14px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .chat-widget-lite-channel-meta {
   font-size: 11px;
   color: #9aa2b4;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .chat-widget-lite-channel-actions {
@@ -295,6 +311,11 @@
   font-size: 22px;
   font-weight: 700;
   color: #fff;
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .chat-widget-lite-chat-header-actions {
@@ -302,39 +323,30 @@
   align-items: center;
   justify-content: flex-end;
   gap: 8px;
+  flex-shrink: 0;
 }
 
-.chat-widget-lite-invite {
+.chat-widget-lite-user-actions {
   display: flex;
+  align-items: center;
   gap: 8px;
-  flex-wrap: wrap;
-  justify-content: flex-end;
 }
 
-.chat-widget-lite-invite select {
-  border-radius: 9px;
-  border: 1px solid #30323b;
-  background: #151515;
-  color: #eceef2;
-  padding: 8px 34px 8px 10px;
-  min-width: 126px;
-  width: 136px;
-  appearance: none;
-  -webkit-appearance: none;
-  -moz-appearance: none;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath fill='none' stroke='%23d4d9e4' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round' d='M1 1.5l5 5 5-5'/%3E%3C/svg%3E");
-  background-repeat: no-repeat;
-  background-position: right 13px center;
-  background-size: 12px 8px;
-}
-
-.chat-widget-lite-invite button {
+.chat-widget-lite-user-action-button {
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
   border: 1px solid #3a3a3a;
-  border-radius: 9px;
   background: #1f1f1f;
   color: #fff;
-  padding: 8px 12px;
+  font-size: 22px;
+  line-height: 1;
   cursor: pointer;
+}
+
+.chat-widget-lite-user-action-button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 
 .chat-widget-lite-leave-button {
@@ -859,6 +871,10 @@
   gap: 10px;
 }
 
+.chat-widget-lite-member-modal {
+  width: min(360px, calc(100% - 32px));
+}
+
 .chat-widget-lite-modal-title {
   font-size: 18px;
   font-weight: 700;
@@ -881,6 +897,41 @@
 
 .chat-widget-lite-modal-text {
   color: #d7dce8;
+}
+
+.chat-widget-lite-modal-empty {
+  color: #9ca4b8;
+  font-size: 12px;
+  border: 1px dashed #373c4b;
+  border-radius: 10px;
+  padding: 10px;
+}
+
+.chat-widget-lite-modal-option-list {
+  display: grid;
+  gap: 6px;
+  max-height: 132px;
+  overflow-y: auto;
+}
+
+.chat-widget-lite-modal-option {
+  border: 1px solid #32394b;
+  background: #151515;
+  color: #dfe5f2;
+  border-radius: 9px;
+  padding: 8px 10px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.chat-widget-lite-modal-option:hover {
+  border-color: #4a5267;
+  background: #1c1c1c;
+}
+
+.chat-widget-lite-modal-option.active {
+  border-color: #bedbb0;
+  color: #fff;
 }
 
 .chat-widget-lite-modal-actions {
@@ -931,6 +982,21 @@
 
   .chat-widget-lite-chat-title {
     font-size: 18px;
+  }
+
+  .chat-widget-lite-chat-header {
+    gap: 6px;
+  }
+
+  .chat-widget-lite-user-action-button {
+    width: 30px;
+    height: 30px;
+    font-size: 18px;
+  }
+
+  .chat-widget-lite-leave-button {
+    padding: 7px 10px;
+    font-size: 12px;
   }
 
   .chat-widget-lite-message {

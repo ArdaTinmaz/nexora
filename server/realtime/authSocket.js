@@ -3,7 +3,7 @@ const User = require('../models/User');
 
 const authenticateSocket = async (socket, next) => {
   try {
-    const token = socket.handshake.auth?.token || socket.handshake.query?.token;
+    const token = socket.handshake.auth?.token;
     if (!token) {
       return next(new Error('Unauthorized'));
     }
@@ -21,6 +21,15 @@ const authenticateSocket = async (socket, next) => {
 
     const user = await User.findUserById(decoded.userId);
     if (!user) {
+      return next(new Error('Unauthorized'));
+    }
+    const tokenSessionVersion = Number.isFinite(Number(decoded.sessionVersion))
+      ? Number(decoded.sessionVersion)
+      : 0;
+    const currentSessionVersion = Number.isFinite(Number(user.sessionVersion))
+      ? Number(user.sessionVersion)
+      : 0;
+    if (tokenSessionVersion !== currentSessionVersion) {
       return next(new Error('Unauthorized'));
     }
 

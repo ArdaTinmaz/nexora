@@ -5,9 +5,23 @@ const crypto = require('crypto');
 const UserModel = require('../models/User');
 const generateToken = require('../utils/generateToken');
 const generateRefreshToken = require('../utils/generateRefreshToken');
+const { getRefreshTokenFingerprint } = generateRefreshToken;
 const sendPasswordResetEmail = require('../utils/sendPasswordResetEmail');
 const { getClientBaseUrl, getDesktopBaseUrl } = require('../utils/getClientBaseUrl');
 const normalizeAvatarUrl = require('../utils/normalizeAvatarUrl');
+const {
+  requireString,
+  optionalString,
+  sanitizeDisplayText,
+} = require('../security/validation');
+const { extractClientIpFromRequest, getUserAgentFromRequest } = require('../security/requestMeta');
+const {
+  buildAttemptKeys,
+  ensureAuthScopeOpen,
+  recordAuthFailure,
+  recordAuthSuccess,
+} = require('../services/authSecurityService');
+const { logSecurityEvent } = require('../services/auditLogService');
 
 const buildUserResponse = (userDoc) => ({
   id: userDoc.id,
@@ -41,8 +55,11 @@ const saveRefreshToken = async (userId, refreshToken) => {
 };
 
 const sendAuthResponse = async ({ res, user, statusCode, message }) => {
-  const token = generateToken(user.id);
-  const refreshToken = generateRefreshToken(user.id);
+  const sessionVersion = Number.isFinite(Number(user?.sessionVersion))
+    ? Number(user.sessionVersion)
+    : 0;
+  const token = generateToken(user.id, sessionVersion);
+  const refreshToken = generateRefreshToken(user.id, sessionVersion);
   await saveRefreshToken(user.id, refreshToken);
 
   res.status(statusCode).json({
@@ -75,14 +92,29 @@ const verifyRefreshToken = async (refreshToken) => {
   }
 };
 
+const getAuthRequestMeta = (req) => ({
+  ip: extractClientIpFromRequest(req),
+  userAgent: getUserAgentFromRequest(req),
+});
+
+const applyAuthLockHeader = (res, error) => {
+  if (error?.code === 'AUTH_TEMP_LOCKED') {
+    const retryAfterSeconds = Math.max(1, Math.ceil(Number(error.retryAfterMs || 0) / 1000));
+    res.set('Retry-After', String(retryAfterSeconds));
+  }
+};
+
+const parseBearerToken = (req) => {
+  const authHeader = req.headers.authorization || '';
+  return authHeader.startsWith('Bearer ') ? authHeader.slice(7) : '';
+};
+
 exports.register = async (req, res, next) => {
   try {
-    const { name, email, password, avatarURL } = req.body;
-
-    if (!name || !email || !password) {
-      return res.status(400).json({ message: 'İsim, e-posta ve şifre zorunludur' });
-    }
-
+    const name = requireString(req.body?.name, 'İsim', { max: 120 });
+    const email = requireString(req.body?.email, 'E-posta', { max: 254 });
+    const password = requireString(req.body?.password, 'Şifre', { max: 256, trim: false });
+    const avatarURL = optionalString(req.body?.avatarURL, { max: 1000 });
     const trimmedEmail = email.trim();
 
     if (!validator.isEmail(trimmedEmail)) {
@@ -104,10 +136,10 @@ exports.register = async (req, res, next) => {
     }
 
     const user = await UserModel.createUser({
-      name: name.trim(),
+      name: sanitizeDisplayText(name, { maxLength: 120 }),
       email: normalizedEmail,
       password,
-      avatarURL: typeof avatarURL === 'string' ? avatarURL.trim() : '',
+      avatarURL,
     });
 
     await sendAuthResponse({
@@ -123,30 +155,101 @@ exports.register = async (req, res, next) => {
 
 exports.login = async (req, res, next) => {
   try {
-    const { email, password } = req.body;
-
-    if (!email || !password) {
-      return res.status(400).json({ message: 'E-posta ve şifre zorunludur' });
-    }
-
+    const email = requireString(req.body?.email, 'E-posta', { max: 254 });
+    const password = requireString(req.body?.password, 'Şifre', { max: 256, trim: false });
     const trimmedEmail = email.trim();
+    const { ip, userAgent } = getAuthRequestMeta(req);
 
     if (!validator.isEmail(trimmedEmail)) {
       return res.status(400).json({ message: 'Geçerli bir e-posta adresi giriniz' });
     }
 
     const normalizedEmail = normalizeEmailInput(trimmedEmail);
+    const attemptKeys = buildAttemptKeys({ identifier: normalizedEmail, ip });
+
+    try {
+      await ensureAuthScopeOpen({
+        scope: 'auth_login',
+        keys: attemptKeys,
+      });
+    } catch (error) {
+      applyAuthLockHeader(res, error);
+      await logSecurityEvent({
+        eventType: 'auth.login_blocked',
+        severity: 'high',
+        outcome: 'blocked',
+        actorType: 'user',
+        actorId: normalizedEmail,
+        ip,
+        userAgent,
+        resource: '/api/auth/login',
+        message: 'Login blocked due to temporary lock',
+      });
+      return res.status(error.statusCode || 429).json({ message: error.message });
+    }
+
     const user = await UserModel.findUserByEmail(normalizedEmail);
 
     if (!user) {
+      await recordAuthFailure({
+        scope: 'auth_login',
+        keys: attemptKeys,
+        ip,
+      });
+      await logSecurityEvent({
+        eventType: 'auth.login_failed',
+        severity: 'medium',
+        outcome: 'failure',
+        actorType: 'user',
+        actorId: normalizedEmail,
+        ip,
+        userAgent,
+        resource: '/api/auth/login',
+        message: 'Login failed: user not found',
+      });
       return res.status(401).json({ message: 'Email or password is incorrect' });
     }
 
     const isMatch = await bcrypt.compare(password, user.password);
 
     if (!isMatch) {
+      await recordAuthFailure({
+        scope: 'auth_login',
+        keys: attemptKeys,
+        ip,
+        metadata: { userId: user.id },
+      });
+      await logSecurityEvent({
+        eventType: 'auth.login_failed',
+        severity: 'medium',
+        outcome: 'failure',
+        actorType: 'user',
+        actorId: user.id,
+        actorName: user.email,
+        ip,
+        userAgent,
+        resource: '/api/auth/login',
+        message: 'Login failed: password mismatch',
+      });
       return res.status(401).json({ message: 'Email or password is incorrect' });
     }
+
+    await recordAuthSuccess({
+      scope: 'auth_login',
+      keys: attemptKeys,
+    });
+    await logSecurityEvent({
+      eventType: 'auth.login_success',
+      severity: 'low',
+      outcome: 'success',
+      actorType: 'user',
+      actorId: user.id,
+      actorName: user.email,
+      ip,
+      userAgent,
+      resource: '/api/auth/login',
+      message: 'User login successful',
+    });
 
     await sendAuthResponse({
       res,
@@ -161,20 +264,154 @@ exports.login = async (req, res, next) => {
 
 exports.refreshToken = async (req, res, next) => {
   try {
-    const { refreshToken } = req.body;
-    const decoded = await verifyRefreshToken(refreshToken);
+    const refreshToken = requireString(req.body?.refreshToken, 'Refresh token', {
+      max: 6000,
+      trim: true,
+    });
+    const { ip, userAgent } = getAuthRequestMeta(req);
+    const fingerprint = getRefreshTokenFingerprint(refreshToken);
+    const attemptKeys = buildAttemptKeys({
+      identifier: `refresh:${fingerprint || 'unknown'}`,
+      ip,
+    });
+
+    try {
+      await ensureAuthScopeOpen({
+        scope: 'auth_refresh',
+        keys: attemptKeys,
+      });
+    } catch (error) {
+      applyAuthLockHeader(res, error);
+      await logSecurityEvent({
+        eventType: 'auth.refresh_blocked',
+        severity: 'high',
+        outcome: 'blocked',
+        actorType: 'user',
+        actorId: fingerprint,
+        ip,
+        userAgent,
+        resource: '/api/auth/refresh-token',
+        message: 'Refresh blocked due to temporary lock',
+      });
+      return res.status(error.statusCode || 429).json({ message: error.message });
+    }
+
+    let decoded;
+    try {
+      decoded = await verifyRefreshToken(refreshToken);
+    } catch (verifyError) {
+      await recordAuthFailure({
+        scope: 'auth_refresh',
+        keys: attemptKeys,
+        ip,
+        metadata: { reason: 'invalid_refresh_token' },
+      });
+      await logSecurityEvent({
+        eventType: 'auth.refresh_failed',
+        severity: 'medium',
+        outcome: 'failure',
+        actorType: 'user',
+        actorId: fingerprint,
+        ip,
+        userAgent,
+        resource: '/api/auth/refresh-token',
+        message: 'Refresh failed: invalid token',
+      });
+      return res.status(401).json({ message: 'Refresh token doğrulanamadı' });
+    }
 
     const user = await UserModel.findUserById(decoded.userId);
 
     if (!user || !user.refreshTokenHash) {
+      await recordAuthFailure({
+        scope: 'auth_refresh',
+        keys: attemptKeys,
+        ip,
+        metadata: { userId: decoded.userId },
+      });
+      await logSecurityEvent({
+        eventType: 'auth.refresh_failed',
+        severity: 'medium',
+        outcome: 'failure',
+        actorType: 'user',
+        actorId: decoded.userId,
+        ip,
+        userAgent,
+        resource: '/api/auth/refresh-token',
+        message: 'Refresh failed: user or stored token not found',
+      });
+      return res.status(401).json({ message: 'Refresh token doğrulanamadı' });
+    }
+
+    const tokenSessionVersion = Number.isFinite(Number(decoded.sessionVersion))
+      ? Number(decoded.sessionVersion)
+      : 0;
+    const currentSessionVersion = Number.isFinite(Number(user.sessionVersion))
+      ? Number(user.sessionVersion)
+      : 0;
+
+    if (tokenSessionVersion !== currentSessionVersion) {
+      await recordAuthFailure({
+        scope: 'auth_refresh',
+        keys: attemptKeys,
+        ip,
+        metadata: { userId: user.id, reason: 'session_version_mismatch' },
+      });
+      await logSecurityEvent({
+        eventType: 'auth.refresh_failed',
+        severity: 'high',
+        outcome: 'failure',
+        actorType: 'user',
+        actorId: user.id,
+        ip,
+        userAgent,
+        resource: '/api/auth/refresh-token',
+        message: 'Refresh failed: session version mismatch',
+      });
       return res.status(401).json({ message: 'Refresh token doğrulanamadı' });
     }
 
     const isMatch = await bcrypt.compare(refreshToken, user.refreshTokenHash);
 
     if (!isMatch) {
+      await UserModel.invalidateUserSessions(user.id);
+      await recordAuthFailure({
+        scope: 'auth_refresh',
+        keys: attemptKeys,
+        ip,
+        metadata: { userId: user.id, reason: 'refresh_reuse_detected' },
+      });
+      await logSecurityEvent({
+        eventType: 'auth.refresh_reuse_detected',
+        severity: 'critical',
+        outcome: 'blocked',
+        actorType: 'user',
+        actorId: user.id,
+        actorName: user.email,
+        ip,
+        userAgent,
+        resource: '/api/auth/refresh-token',
+        message: 'Refresh token reuse detected. All sessions invalidated.',
+      });
       return res.status(401).json({ message: 'Refresh token doğrulanamadı' });
     }
+
+    await recordAuthSuccess({
+      scope: 'auth_refresh',
+      keys: attemptKeys,
+    });
+    await logSecurityEvent({
+      eventType: 'auth.refresh_success',
+      severity: 'low',
+      outcome: 'success',
+      actorType: 'user',
+      actorId: user.id,
+      actorName: user.email,
+      ip,
+      userAgent,
+      resource: '/api/auth/refresh-token',
+      message: 'Token refresh successful',
+    });
 
     await sendAuthResponse({
       res,
@@ -189,31 +426,61 @@ exports.refreshToken = async (req, res, next) => {
 
 exports.logout = async (req, res, next) => {
   try {
-    const { refreshToken } = req.body;
+    const refreshToken = optionalString(req.body?.refreshToken, { max: 6000, trim: true });
+    const bearerToken = parseBearerToken(req);
+    const { ip, userAgent } = getAuthRequestMeta(req);
+    const invalidatedUserIds = new Set();
 
-    if (!refreshToken) {
-      return res.status(200).json({ message: 'Çıkış yapıldı' });
-    }
+    const invalidateUser = async (userId) => {
+      if (!userId || invalidatedUserIds.has(String(userId))) return;
+      await UserModel.invalidateUserSessions(userId);
+      invalidatedUserIds.add(String(userId));
+    };
 
-    try {
-      const decoded = await verifyRefreshToken(refreshToken);
-      const user = await UserModel.findUserById(decoded.userId);
-
-      if (user && user.refreshTokenHash) {
-        const isMatch = await bcrypt.compare(refreshToken, user.refreshTokenHash);
-
-        if (isMatch) {
-          await UserModel.clearRefreshToken(user.id);
+    if (refreshToken) {
+      try {
+        const decoded = await verifyRefreshToken(refreshToken);
+        const user = await UserModel.findUserById(decoded.userId);
+        if (user && user.refreshTokenHash) {
+          const isMatch = await bcrypt.compare(refreshToken, user.refreshTokenHash);
+          if (isMatch) {
+            await invalidateUser(user.id);
+          }
+        }
+      } catch (err) {
+        if (!err.statusCode || err.statusCode >= 500) {
+          return next(err);
         }
       }
-    } catch (err) {
-      if (!err.statusCode || err.statusCode >= 500) {
-        return next(err);
-      }
-      // token geçersizse de çıkışı başarılı sayıyoruz
     }
 
-    res.status(200).json({ message: 'Çıkış yapıldı' });
+    if (bearerToken && process.env.JWT_SECRET) {
+      try {
+        const decodedAccess = jwt.verify(bearerToken, process.env.JWT_SECRET);
+        if (decodedAccess?.userId) {
+          await invalidateUser(decodedAccess.userId);
+        }
+      } catch (_err) {
+        // logout endpoint remains idempotent for expired/invalid access token
+      }
+    }
+
+    await logSecurityEvent({
+      eventType: 'auth.logout',
+      severity: 'low',
+      outcome: 'success',
+      actorType: 'user',
+      actorId: invalidatedUserIds.size ? [...invalidatedUserIds][0] : '',
+      ip,
+      userAgent,
+      resource: '/api/auth/logout',
+      message: 'Logout processed and token invalidation applied',
+      metadata: {
+        invalidatedSessionCount: invalidatedUserIds.size,
+      },
+    });
+
+    return res.status(200).json({ message: 'Çıkış yapıldı' });
   } catch (error) {
     next(error);
   }
@@ -221,12 +488,7 @@ exports.logout = async (req, res, next) => {
 
 exports.forgotPassword = async (req, res, next) => {
   try {
-    const { email } = req.body;
-
-    if (!email) {
-      return res.status(400).json({ message: 'Geçerli bir e-posta adresi giriniz' });
-    }
-
+    const email = requireString(req.body?.email, 'E-posta', { max: 254 });
     const trimmedEmail = email.trim();
 
     if (!validator.isEmail(trimmedEmail)) {
@@ -280,11 +542,8 @@ exports.forgotPassword = async (req, res, next) => {
 
 exports.resetPassword = async (req, res, next) => {
   try {
-    const { token, password } = req.body;
-
-    if (!token || !password) {
-      return res.status(400).json({ message: 'Token ve yeni şifre gereklidir' });
-    }
+    const token = requireString(req.body?.token, 'Token', { max: 6000 });
+    const password = requireString(req.body?.password, 'Şifre', { max: 256, trim: false });
 
     if (!validator.isStrongPassword(password, { minNumbers: 1, minSymbols: 0 })) {
       return res.status(400).json({
@@ -301,10 +560,12 @@ exports.resetPassword = async (req, res, next) => {
     }
 
     const updatedUser = await UserModel.updatePassword(user.id, password);
+    const sessionInvalidatedUser = await UserModel.incrementSessionVersion(updatedUser.id);
+    const userForResponse = sessionInvalidatedUser || updatedUser;
 
     await sendAuthResponse({
       res,
-      user: updatedUser,
+      user: userForResponse,
       statusCode: 200,
       message: 'Şifreniz güncellendi',
     });
