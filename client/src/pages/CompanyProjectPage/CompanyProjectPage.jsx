@@ -32,7 +32,6 @@ function CompanyProjectPage({ projects = [], loading = false, onProjectsChange }
   const [selectedCard, setSelectedCard] = useState(null);
   const [selectedColumnForEdit, setSelectedColumnForEdit] = useState(null);
   const [columnToDelete, setColumnToDelete] = useState(null);
-  const [cardToDelete, setCardToDelete] = useState(null);
   const [cardDetails, setCardDetails] = useState(null);
   const [cardToMove, setCardToMove] = useState(null);
   const [cardToMoveColumnId, setCardToMoveColumnId] = useState(null);
@@ -318,26 +317,6 @@ function CompanyProjectPage({ projects = [], loading = false, onProjectsChange }
     }
   };
 
-  const handleDeleteCard = async (cardId) => {
-    if (!projectId) return;
-    try {
-      const column = columns.find((col) => col.cards?.some((c) => c.id === cardId));
-      if (!column) return;
-
-      await companyBoardApi.deleteCard(projectId, column.id, cardId);
-      setColumns((prev) =>
-        prev.map((col) => {
-          if (col.id === column.id) {
-            return { ...col, cards: col.cards.filter((c) => c.id !== cardId) };
-          }
-          return col;
-        })
-      );
-    } catch (error) {
-      console.error('Error deleting card:', error);
-    }
-  };
-
   const handleMoveCard = async (cardId, fromColumnId, toColumnId, toIndex) => {
     if (!projectId) return;
     try {
@@ -533,26 +512,13 @@ function CompanyProjectPage({ projects = [], loading = false, onProjectsChange }
     setColumnToDelete(columnId);
   };
 
-  const requestDeleteCard = (cardId) => {
-    setCardToDelete(cardId);
-  };
-
   const confirmDeleteColumn = async () => {
     if (!columnToDelete) return;
     await handleDeleteColumn(columnToDelete);
     setColumnToDelete(null);
   };
 
-  const confirmDeleteCard = async () => {
-    if (!cardToDelete) return;
-    await handleDeleteCard(cardToDelete);
-    setCardToDelete(null);
-  };
-
   const columnTitleToDelete = columns.find((c) => c.id === columnToDelete)?.title;
-  const cardTitleToDelete = columns
-    .flatMap((col) => col.cards || [])
-    .find((c) => c.id === cardToDelete)?.title;
 
   const projectName = projects.find((item) => item.id === projectId)?.name || board?.name;
   const boardIconName = board?.iconName || 'icon-Project';
@@ -618,7 +584,7 @@ function CompanyProjectPage({ projects = [], loading = false, onProjectsChange }
               onAddCard={canManage ? handleAddCard : null}
               onEditCard={canManage ? handleEditCard : null}
               onViewCard={(card) => setCardDetails(card)}
-              onDeleteCard={canManage ? requestDeleteCard : null}
+              onDeleteCard={null}
               onMoveButtonClick={(card) => {
                 setCardToMove(card);
                 setCardToMoveColumnId(column.id);
@@ -739,16 +705,6 @@ function CompanyProjectPage({ projects = [], loading = false, onProjectsChange }
         cancelLabel="Cancel"
         onConfirm={confirmDeleteColumn}
         onCancel={() => setColumnToDelete(null)}
-      />
-
-      <ConfirmModal
-        isOpen={Boolean(cardToDelete)}
-        title="Delete card"
-        message={`Are you sure you want to delete "${cardTitleToDelete || 'this card'}"?`}
-        confirmLabel="Delete"
-        cancelLabel="Cancel"
-        onConfirm={confirmDeleteCard}
-        onCancel={() => setCardToDelete(null)}
       />
 
       <CardDetailsModal

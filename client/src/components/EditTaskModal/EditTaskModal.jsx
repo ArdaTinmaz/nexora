@@ -13,6 +13,8 @@ function EditTaskModal({
   task,
   loading = false,
   errorMessage = '',
+  assigneeOptions = [],
+  assigneesLoading = false,
   onClose,
   onSave,
 }) {
@@ -22,6 +24,7 @@ function EditTaskModal({
     priority: 'without',
     status: 'pending',
     deadline: '',
+    assignedTo: '',
   });
   const [localError, setLocalError] = useState('');
 
@@ -33,9 +36,22 @@ function EditTaskModal({
       priority: task.priority || 'without',
       status: task.status || 'pending',
       deadline: toInputDate(task.deadline),
+      assignedTo: task.assignedTo || '',
     });
     setLocalError('');
   }, [task]);
+
+  useEffect(() => {
+    if (!isOpen || !assigneeOptions.length) return;
+    setDraft((prev) => {
+      const hasAssignee = assigneeOptions.some((member) => member.id === prev.assignedTo);
+      if (hasAssignee) return prev;
+      return {
+        ...prev,
+        assignedTo: assigneeOptions[0].id,
+      };
+    });
+  }, [assigneeOptions, isOpen]);
 
   if (!isOpen || !task) return null;
 
@@ -43,6 +59,10 @@ function EditTaskModal({
     event.preventDefault();
     if (!draft.title.trim()) {
       setLocalError('Title is required.');
+      return;
+    }
+    if (!draft.assignedTo) {
+      setLocalError('Assigned user is required.');
       return;
     }
     setLocalError('');
@@ -89,6 +109,30 @@ function EditTaskModal({
                 setDraft((prev) => ({ ...prev, description: event.target.value }))
               }
             />
+          </label>
+
+          <label className={styles.label}>
+            Assigned
+            <select
+              className={styles.select}
+              value={draft.assignedTo}
+              disabled={loading || assigneesLoading || assigneeOptions.length === 0}
+              onChange={(event) =>
+                setDraft((prev) => ({ ...prev, assignedTo: event.target.value }))
+              }
+            >
+              {assigneeOptions.length === 0 ? (
+                <option value="">
+                  {assigneesLoading ? 'Loading assignees...' : 'No assignee'}
+                </option>
+              ) : (
+                assigneeOptions.map((member) => (
+                  <option key={member.id} value={member.id}>
+                    {member.name || member.email || member.id}
+                  </option>
+                ))
+              )}
+            </select>
           </label>
 
           <div className={styles.row}>

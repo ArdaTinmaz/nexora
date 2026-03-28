@@ -1389,11 +1389,10 @@ const AdminConsole = () => {
             className={`${styles.btn} ${styles.btnAccent}`}
             onClick={() => {
               setProjectModal({ id: null });
-              const firstId = users[0]?.id || '';
               setProjectDraft({
                 name: '',
-                ownerId: firstId,
-                ownerName: userNameMap[firstId] || '',
+                ownerId: '',
+                ownerName: '',
                 status: 'Active',
               });
               setAssignProjectDraft({ teamId: '' });
@@ -1430,7 +1429,7 @@ const AdminConsole = () => {
                 </button>
               </div>
               <div className={styles.muted}>
-                Owner: {userNameMap[project.ownerId] || project.ownerName || project.ownerId || '—'}
+                Owner: {userNameMap[project.ownerId] || project.ownerName || project.ownerId || '-'}
               </div>
               <div className={styles.metaRow}>
                 <span>
@@ -1503,7 +1502,13 @@ const AdminConsole = () => {
                 <select
                   className={styles.select}
                   value={projectDraft.ownerId}
-                  onChange={(e) => setProjectDraft((p) => ({ ...p, ownerId: e.target.value }))}
+                  onChange={(e) =>
+                    setProjectDraft((p) => ({
+                      ...p,
+                      ownerId: e.target.value,
+                      ownerName: userNameMap[e.target.value] || '',
+                    }))
+                  }
                 >
                   <option value="">Select owner</option>
                   {projectOwnerOptions.length ? (
@@ -1610,12 +1615,15 @@ const AdminConsole = () => {
                 <button
                   className={styles.btnPrimary}
                   onClick={async () => {
+                    const selectedOwnerName = projectDraft.ownerId
+                      ? projectDraft.ownerName || userNameMap[projectDraft.ownerId] || projectDraft.ownerId
+                      : '';
                     try {
                       setLoading(true);
                       await adminApi.updateProject(projectModal.id, {
                         name: projectDraft.name,
-                        ownerId: projectDraft.ownerId,
-                        ownerName: projectDraft.ownerName || userNameMap[projectDraft.ownerId] || projectDraft.ownerId,
+                        ownerId: projectDraft.ownerId || null,
+                        ownerName: selectedOwnerName,
                         status: projectDraft.status || 'Active',
                       });
                       await handleTeamAssignAction();
@@ -1635,16 +1643,19 @@ const AdminConsole = () => {
                 <button
                   className={styles.btnPrimary}
                   onClick={async () => {
-                    if (!projectDraft.name || !projectDraft.ownerId) {
-                      setStatusMsg('Name ve owner zorunlu');
+                    if (!projectDraft.name) {
+                      setStatusMsg('Project name is required');
                       return;
                     }
+                    const selectedOwnerName = projectDraft.ownerId
+                      ? projectDraft.ownerName || userNameMap[projectDraft.ownerId] || projectDraft.ownerId
+                      : '';
                     try {
                       setLoading(true);
                       const created = await adminApi.createProject({
                         name: projectDraft.name,
-                        ownerId: projectDraft.ownerId,
-                        ownerName: projectDraft.ownerName || userNameMap[projectDraft.ownerId] || projectDraft.ownerId,
+                        ownerId: projectDraft.ownerId || null,
+                        ownerName: selectedOwnerName,
                         status: projectDraft.status || 'Active',
                       });
                       if (assignProjectDraft.teamId) {

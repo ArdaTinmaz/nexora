@@ -128,18 +128,11 @@ const mapAssignment = (doc, maps) => ({
 });
 
 const canManageAssignment = async ({ assignment, userId }) => {
-  if (
-    assignment.assignedTo.toString() === userId ||
-    assignment.assignedBy.toString() === userId
-  ) {
-    return true;
-  }
-
   const team = await Team.findById(assignment.teamId).lean();
   if (!team) return false;
 
   const role = findUserRoleInTeam(team, userId);
-  return role === 'team_leader';
+  return role === 'team_leader' || role === 'admin';
 };
 
 exports.getMyAssignments = async (req, res, next) => {
@@ -326,9 +319,11 @@ exports.updateAssignment = async (req, res, next) => {
       priority,
       deadline,
       status,
+      assignedTo,
     } = req.body || {};
 
     const updates = {};
+    let nextAssignee = null;
     if (typeof title !== 'undefined') {
       if (!String(title).trim()) {
         throw badRequest('Görev başlığı zorunlu');
@@ -361,6 +356,28 @@ exports.updateAssignment = async (req, res, next) => {
       }
       updates.status = status;
     }
+    if (typeof assignedTo !== 'undefined') {
+      if (!mongoose.Types.ObjectId.isValid(assignedTo)) {
+        throw badRequest('assignedTo geçersiz');
+      }
+
+      const team = await Team.findById(assignment.teamId).lean();
+      if (!team) {
+        throw notFound('Takım bulunamadı');
+      }
+
+      const targetRole = findUserRoleInTeam(team, String(assignedTo));
+      if (!targetRole) {
+        throw forbidden('Kullanıcı takımda değil');
+      }
+
+      nextAssignee = await UserModel.model.findById(assignedTo).lean();
+      if (!nextAssignee) {
+        throw notFound('Kullanıcı bulunamadı');
+      }
+
+      updates.assignedTo = toObjectId(assignedTo);
+    }
 
     if (!Object.keys(updates).length) {
       throw badRequest('Güncellenecek alan bulunamadı');
@@ -389,11 +406,30 @@ exports.updateAssignment = async (req, res, next) => {
       if (typeof updates.deadline !== 'undefined') {
         cardUpdates.deadline = toCardDeadline(updates.deadline);
       }
+      if (typeof updates.assignedTo !== 'undefined') {
+        const timestamp = Date.now();
+        cardUpdates.ownerId = updates.assignedTo;
+        cardUpdates.ownerName = nextAssignee?.name || nextAssignee?.email || '';
+        cardUpdates.ownerAvatarURL = nextAssignee?.avatarURL || '';
+        cardUpdates.assignees = [
+          {
+            userId: updates.assignedTo,
+            name: nextAssignee?.name || nextAssignee?.email || '',
+            avatarURL: nextAssignee?.avatarURL || '',
+            claimedAt: timestamp,
+          },
+        ];
+      }
 
       if (Object.keys(cardUpdates).length) {
         cardUpdates.updatedAt = Date.now();
         await Card.updateOne({ _id: toObjectId(assignment.cardId) }, cardUpdates);
       }
+    }
+
+    let assigneeDoc = nextAssignee;
+    if (!assigneeDoc && updated.assignedTo) {
+      assigneeDoc = await UserModel.model.findById(updated.assignedTo).lean();
     }
 
     res.json({
@@ -403,6 +439,8 @@ exports.updateAssignment = async (req, res, next) => {
       priority: updated.priority,
       deadline: updated.deadline,
       status: updated.status,
+      assignedTo: updated.assignedTo?.toString?.() || '',
+      assignedToName: assigneeDoc?.name || assigneeDoc?.email || '',
     });
   } catch (error) {
     next(error);

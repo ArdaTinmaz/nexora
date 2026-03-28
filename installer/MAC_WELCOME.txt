@@ -1,0 +1,4 @@
+Welcome to the Nexora Installer.
+
+This setup wizard will guide you through the installation steps on macOS.
+Before continuing, please review the Terms of Use and Privacy Policy on the next page.

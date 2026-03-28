@@ -202,14 +202,25 @@
 .avatar.userAvatar {
   width: 80px;
   height: 80px;
+  min-width: 80px;
+  min-height: 80px;
+  max-width: 80px;
+  max-height: 80px;
   border-radius: 20px;
   font-size: 22px;
   grid-column: 1;
   grid-row: 1;
+  overflow: hidden;
+  flex-shrink: 0;
 }
 
 .avatar.userAvatar .avatarImg {
   border-radius: 16px;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center;
+  display: block;
 }
 
 .userInfo {

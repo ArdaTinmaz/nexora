@@ -5,7 +5,7 @@ const platform = process.platform;
 let targetCommand;
 
 if (platform === "darwin") {
-  targetCommand = "electron-builder --mac dmg";
+  targetCommand = "electron-builder --mac dmg pkg";
 } else if (platform === "win32") {
   targetCommand = "electron-builder --win nsis";
 } else {

@@ -78,7 +78,7 @@ const createProject = async ({
     throw error;
   }
 
-  const ownerObjectId = toObjectIdSafe(ownerId) || new mongoose.Types.ObjectId();
+  const ownerObjectId = toObjectIdSafe(ownerId);
   if (parentProjectId && !mongoose.Types.ObjectId.isValid(parentProjectId)) {
     const error = new Error('parentProjectId geçersiz');
     error.statusCode = 400;
@@ -87,7 +87,7 @@ const createProject = async ({
 
   const project = await Project.create({
     name: name.trim(),
-    ownerId: ownerObjectId,
+    ownerId: ownerObjectId || null,
     ownerName: ownerName || '',
     parentProjectId: parentProjectId ? toObjectId(parentProjectId) : null,
     status,
@@ -98,7 +98,7 @@ const createProject = async ({
   return {
     id: project._id.toString(),
     name: project.name,
-    ownerId: project.ownerId.toString(),
+    ownerId: project.ownerId ? project.ownerId.toString() : null,
     ownerName: project.ownerName || '',
     parentProjectId: project.parentProjectId ? project.parentProjectId.toString() : null,
     status: project.status || 'Active',
@@ -112,7 +112,7 @@ const listProjects = async (ownerId) => {
   return projects.map((project) => ({
     id: project._id.toString(),
     name: project.name,
-    ownerId: project.ownerId.toString(),
+    ownerId: project.ownerId ? project.ownerId.toString() : null,
     ownerName: project.ownerName || '',
     parentProjectId: project.parentProjectId ? project.parentProjectId.toString() : null,
     status: project.status || 'Active',
@@ -197,7 +197,7 @@ const listProjectsForUser = async (userId) => {
     return {
     id: project._id.toString(),
     name: project.name,
-    ownerId: project.ownerId.toString(),
+    ownerId: project.ownerId ? project.ownerId.toString() : null,
     ownerName: project.ownerName || '',
     parentProjectId: project.parentProjectId ? project.parentProjectId.toString() : null,
     status: project.status || 'Active',

@@ -13,8 +13,8 @@
     "build:client": "npm run prepare:client && npm --prefix client run build",
     "pack": "npm run build:client && npm run prepare:server && electron-builder --dir",
     "dist": "npm run build:client && npm run prepare:server && node scripts/dist-by-platform.js",
-    "dist:all": "npm run build:client && npm run prepare:server && electron-builder --mac dmg --win nsis",
-    "dist:mac": "npm run build:client && npm run prepare:server && electron-builder --mac dmg",
+    "dist:all": "npm run build:client && npm run prepare:server && electron-builder --mac dmg pkg --win nsis",
+    "dist:mac": "npm run build:client && npm run prepare:server && electron-builder --mac dmg pkg",
     "dist:win": "npm run build:client && npm run prepare:server && electron-builder --win nsis"
   },
   "dependencies": {
@@ -83,8 +83,14 @@
     "mac": {
       "icon": "client/public/icon.PNG",
       "target": [
-        "dmg"
+        "dmg",
+        "pkg"
       ]
+    },
+    "pkg": {
+      "license": "installer/TERMS_OF_POLICY.txt",
+      "welcome": "installer/MAC_WELCOME.txt",
+      "conclusion": "installer/MAC_CONCLUSION.txt"
     },
     "nsis": {
       "installerIcon": "client/public/favicon.ico",

@@ -33,6 +33,8 @@ function DashboardPage({
   const [userName, setUserName] = useState('there');
   const [userId, setUserId] = useState('');
   const [loading, setLoading] = useState(true);
+  const [isCreateTaskModalOpen, setIsCreateTaskModalOpen] = useState(false);
+  const [selectedBoardId, setSelectedBoardId] = useState('');
 
   useEffect(() => {
     let isMounted = true;
@@ -159,6 +161,39 @@ function DashboardPage({
       .slice(0, 3);
   }, [boards, companyProjects]);
 
+  const selectedBoard = useMemo(
+    () => (boards || []).find((board) => String(board.id) === String(selectedBoardId)) || null,
+    [boards, selectedBoardId]
+  );
+
+  const openCreateTaskModal = () => {
+    const boardList = Array.isArray(boards) ? boards : [];
+    setSelectedBoardId((prev) => {
+      const hasPrevious = boardList.some((board) => String(board.id) === String(prev));
+      if (hasPrevious) return prev;
+      return boardList[0]?.id || '';
+    });
+    setIsCreateTaskModalOpen(true);
+  };
+
+  const closeCreateTaskModal = () => {
+    setIsCreateTaskModalOpen(false);
+  };
+
+  const handleSelectBoardForTask = () => {
+    if (!selectedBoard) return;
+    setIsCreateTaskModalOpen(false);
+    navigate(`/home/${encodeURIComponent(selectedBoard.name)}`);
+  };
+
+  useEffect(() => {
+    if (!isCreateTaskModalOpen || boards.length === 0) return;
+    const hasSelected = boards.some((board) => String(board.id) === String(selectedBoardId));
+    if (!hasSelected) {
+      setSelectedBoardId(boards[0].id);
+    }
+  }, [isCreateTaskModalOpen, boards, selectedBoardId]);
+
   return (
     <div className={styles.dashboard}>
       <section className={styles.hero}>
@@ -190,7 +225,7 @@ function DashboardPage({
               <h2>Quick actions</h2>
             </div>
             <div className={styles.actions}>
-              <button type="button" onClick={() => navigate('/home/tasks?new=1')}>
+              <button type="button" onClick={openCreateTaskModal}>
                 Create task
               </button>
               <button type="button" onClick={() => window.dispatchEvent(new Event('nexora:create-board'))}>
@@ -298,6 +333,68 @@ function DashboardPage({
           </article>
         </div>
       </section>
+
+      {isCreateTaskModalOpen && (
+        <div
+          className={styles.modalOverlay}
+          onClick={(event) => {
+            if (event.target === event.currentTarget) {
+              closeCreateTaskModal();
+            }
+          }}
+        >
+          <div className={styles.modalCard} onClick={(event) => event.stopPropagation()}>
+            <div className={styles.modalHeader}>
+              <h3 className={styles.modalTitle}>Select board</h3>
+              <button
+                type="button"
+                className={styles.modalCloseBtn}
+                onClick={closeCreateTaskModal}
+                aria-label="Close board selection modal"
+              >
+                &times;
+              </button>
+            </div>
+
+            {boardsLoading ? (
+              <p className={styles.modalText}>Loading your personal boards...</p>
+            ) : boards.length === 0 ? (
+              <p className={`${styles.modalText} ${styles.modalWarning}`}>
+                No personal boards found. Please create a personal board first.
+              </p>
+            ) : (
+              <>
+                <p className={styles.modalText}>Choose a personal board to continue.</p>
+                <select
+                  className={styles.modalSelect}
+                  value={selectedBoardId}
+                  onChange={(event) => setSelectedBoardId(event.target.value)}
+                >
+                  {boards.map((board) => (
+                    <option key={board.id} value={board.id}>
+                      {board.name}
+                    </option>
+                  ))}
+                </select>
+              </>
+            )}
+
+            <div className={styles.modalActions}>
+              <button type="button" className={styles.modalBtnSecondary} onClick={closeCreateTaskModal}>
+                Cancel
+              </button>
+              <button
+                type="button"
+                className={styles.modalBtnPrimary}
+                disabled={boardsLoading || !selectedBoard}
+                onClick={handleSelectBoardForTask}
+              >
+                Open board
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

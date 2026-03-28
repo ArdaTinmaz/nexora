@@ -4,6 +4,7 @@ import styles from './TasksPage.module.css';
 import { taskApi } from '../../api/taskApi';
 import { teamApi } from '../../api/teamApi';
 import { companyBoardApi } from '../../api/companyBoardApi';
+import { getSession } from '../../desktop/session';
 import ConfirmModal from '../../components/ConfirmModal/ConfirmModal';
 import EditTaskModal from '../../components/EditTaskModal/EditTaskModal';
 import TaskFiltersModal from '../../components/TaskFiltersModal/TaskFiltersModal';
@@ -69,9 +70,13 @@ function TasksPage({ companyProjects = [] }) {
   const [taskToEdit, setTaskToEdit] = useState(null);
   const [taskToDelete, setTaskToDelete] = useState(null);
   const [editModalError, setEditModalError] = useState('');
+  const [editAssignees, setEditAssignees] = useState([]);
+  const [editAssigneesLoading, setEditAssigneesLoading] = useState(false);
   const [isAssignModalOpen, setIsAssignModalOpen] = useState(false);
   const [isTaskFiltersOpen, setIsTaskFiltersOpen] = useState(false);
   const [taskFilters, setTaskFilters] = useState(defaultTaskFilters);
+  const [currentUserId, setCurrentUserId] = useState('');
+  const isTeamLead = leadTeams.length > 0;
 
   const projectNameMap = useMemo(() => {
     return (companyProjects || []).reduce((acc, project) => {
@@ -246,6 +251,26 @@ function TasksPage({ companyProjects = [] }) {
   }, [createDraft.teamId, refreshKey]);
 
   useEffect(() => {
+    let isActive = true;
+
+    getSession()
+      .then((session) => {
+        if (!isActive) return;
+        const nextId = session?.user?.id || session?.user?._id || '';
+        setCurrentUserId(String(nextId || ''));
+      })
+      .catch(() => {
+        if (isActive) {
+          setCurrentUserId('');
+        }
+      });
+
+    return () => {
+      isActive = false;
+    };
+  }, []);
+
+  useEffect(() => {
     const loadMembers = async () => {
       if (!createDraft.teamId) {
         setMembers([]);
@@ -345,6 +370,7 @@ function TasksPage({ companyProjects = [] }) {
   };
 
   const openEditModal = (task) => {
+    if (!isTeamLead) return;
     setTaskToEdit(task);
     setEditModalError('');
   };
@@ -354,7 +380,56 @@ function TasksPage({ companyProjects = [] }) {
     if (isSaving) return;
     setTaskToEdit(null);
     setEditModalError('');
+    setEditAssignees([]);
+    setEditAssigneesLoading(false);
   };
+
+  useEffect(() => {
+    let isActive = true;
+
+    const loadEditAssignees = async () => {
+      if (!taskToEdit?.teamId || !isTeamLead) {
+        setEditAssignees([]);
+        setEditAssigneesLoading(false);
+        return;
+      }
+
+      setEditAssigneesLoading(true);
+      try {
+        const data = await teamApi.members(taskToEdit.teamId);
+        if (!isActive) return;
+        const list = Array.isArray(data) ? data : [];
+        const unique = new Map();
+        list.forEach((member) => {
+          if (!member?.id) return;
+          if (!unique.has(member.id)) {
+            unique.set(member.id, member);
+          }
+        });
+        if (taskToEdit.assignedTo && !unique.has(taskToEdit.assignedTo)) {
+          unique.set(taskToEdit.assignedTo, {
+            id: taskToEdit.assignedTo,
+            name: taskToEdit.assignedToName || taskToEdit.assignedTo,
+            email: '',
+          });
+        }
+        setEditAssignees(Array.from(unique.values()));
+      } catch (error) {
+        console.error('Error loading edit assignees:', error);
+        if (!isActive) return;
+        setEditAssignees([]);
+      } finally {
+        if (isActive) {
+          setEditAssigneesLoading(false);
+        }
+      }
+    };
+
+    loadEditAssignees();
+    return () => {
+      isActive = false;
+    };
+  }, [taskToEdit, isTeamLead]);
 
   const handleSaveTask = async (payload) => {
     if (!taskToEdit?.id) return;
@@ -371,6 +446,7 @@ function TasksPage({ companyProjects = [] }) {
         priority: payload.priority,
         deadline: payload.deadline ? new Date(payload.deadline).getTime() : null,
         status: payload.status,
+        assignedTo: payload.assignedTo,
       });
 
       setTasks((prev) =>
@@ -397,6 +473,7 @@ function TasksPage({ companyProjects = [] }) {
   };
 
   const requestDeleteTask = (task) => {
+    if (!isTeamLead) return;
     setTaskToDelete(task);
   };
 
@@ -501,7 +578,15 @@ function TasksPage({ companyProjects = [] }) {
     }
   };
 
+  const canTransferTask = (task) => {
+    if (!task || task.cardId) return false;
+    if (!currentUserId) return false;
+    return String(task.assignedTo || '') === String(currentUserId);
+  };
+
   const renderTransfer = (task) => {
+    if (!canTransferTask(task)) return null;
+
     const draft = transferState[task.id];
     if (!draft?.columns) {
       return (
@@ -540,10 +625,10 @@ function TasksPage({ companyProjects = [] }) {
         <button
           className={styles.transferBtn}
           type="button"
-          disabled={!draft.columnId || task.cardId}
+          disabled={!draft.columnId}
           onClick={() => handleTransfer(task)}
         >
-          {task.cardId ? 'Transferred' : 'Transfer'}
+          Transfer
         </button>
       </div>
     );
@@ -599,6 +684,7 @@ function TasksPage({ companyProjects = [] }) {
             ) : (
               filteredTasks.map((task) => {
                 const actionState = cardActionState[task.id] || {};
+                const showTransfer = canTransferTask(task);
 
                 return (
                   <div key={task.id} className={styles.taskCard}>
@@ -608,24 +694,26 @@ function TasksPage({ companyProjects = [] }) {
                         <p className={styles.taskDesc}>{task.description || 'No description.'}</p>
                       </div>
                       <div className={styles.cardTopRight}>
-                        <div className={styles.cardActions}>
-                          <button
-                            className={styles.actionBtn}
-                            type="button"
-                            disabled={actionState.saving || actionState.deleting}
-                            onClick={() => openEditModal(task)}
-                          >
-                            Edit
-                          </button>
-                          <button
-                            className={`${styles.actionBtn} ${styles.deleteBtn}`}
-                            type="button"
-                            disabled={actionState.saving || actionState.deleting}
-                            onClick={() => requestDeleteTask(task)}
-                          >
-                            {actionState.deleting ? 'Deleting...' : 'Delete'}
-                          </button>
-                        </div>
+                        {isTeamLead && (
+                          <div className={styles.cardActions}>
+                            <button
+                              className={styles.actionBtn}
+                              type="button"
+                              disabled={actionState.saving || actionState.deleting}
+                              onClick={() => openEditModal(task)}
+                            >
+                              Edit
+                            </button>
+                            <button
+                              className={`${styles.actionBtn} ${styles.deleteBtn}`}
+                              type="button"
+                              disabled={actionState.saving || actionState.deleting}
+                              onClick={() => requestDeleteTask(task)}
+                            >
+                              {actionState.deleting ? 'Deleting...' : 'Delete'}
+                            </button>
+                          </div>
+                        )}
                         <span className={styles.statusBadge}>
                           {statusLabels[task.status] || task.status || 'Pending'}
                         </span>
@@ -656,19 +744,21 @@ function TasksPage({ companyProjects = [] }) {
                         </strong>
                       </span>
                     </div>
-                    <div className={styles.transferBlock}>
-                      <p className={styles.metaMuted}>
-                        Transfer this task into a company board column.
-                      </p>
-                      {renderTransfer(task)}
-                      {transferState[task.id]?.error && (
-                        <p className={styles.errorText}>{transferState[task.id].error}</p>
-                      )}
-                      {transferState[task.id]?.success && (
-                        <p className={styles.successText}>Task transferred to board.</p>
-                      )}
-                      {actionState.error && <p className={styles.errorText}>{actionState.error}</p>}
-                    </div>
+                    {showTransfer && (
+                      <div className={styles.transferBlock}>
+                        <p className={styles.metaMuted}>
+                          Transfer this task into a company board column.
+                        </p>
+                        {renderTransfer(task)}
+                        {transferState[task.id]?.error && (
+                          <p className={styles.errorText}>{transferState[task.id].error}</p>
+                        )}
+                        {transferState[task.id]?.success && (
+                          <p className={styles.successText}>Task transferred to board.</p>
+                        )}
+                      </div>
+                    )}
+                    {actionState.error && <p className={styles.errorText}>{actionState.error}</p>}
                   </div>
                 );
               })
@@ -849,6 +939,8 @@ function TasksPage({ companyProjects = [] }) {
         task={taskToEdit}
         loading={Boolean(taskToEdit && cardActionState[taskToEdit.id]?.saving)}
         errorMessage={editModalError}
+        assigneeOptions={editAssignees}
+        assigneesLoading={editAssigneesLoading}
         onClose={closeEditModal}
         onSave={handleSaveTask}
       />

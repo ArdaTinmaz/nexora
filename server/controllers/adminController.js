@@ -382,7 +382,7 @@ exports.listProjects = async (_req, res, next) => {
       projects.map((p) => ({
         id: p._id.toString(),
         name: p.name,
-        ownerId: p.ownerId.toString(),
+        ownerId: p.ownerId ? p.ownerId.toString() : null,
         ownerName: p.ownerName || '',
         parentProjectId: p.parentProjectId ? p.parentProjectId.toString() : null,
         status: p.status || 'Active',
@@ -398,12 +398,12 @@ exports.listProjects = async (_req, res, next) => {
 exports.createProject = async (req, res, next) => {
   try {
     const { name, ownerId, ownerName, parentProjectId, endDate, status } = req.body || {};
-    if (!ownerId || !mongoose.Types.ObjectId.isValid(ownerId)) {
+    if (ownerId && !mongoose.Types.ObjectId.isValid(ownerId)) {
       return res.status(400).json({ message: 'ownerId geçersiz' });
     }
     const project = await createProject({
       name,
-      ownerId,
+      ownerId: ownerId || null,
       ownerName: ownerName || '',
       parentProjectId,
       endDate,
@@ -443,8 +443,23 @@ exports.updateProject = async (req, res, next) => {
     }
     const updates = {};
     if (name) updates.name = name.trim();
-    if (ownerId) updates.ownerId = ownerId;
-    if (ownerName) updates.ownerName = ownerName;
+    if (Object.prototype.hasOwnProperty.call(req.body || {}, 'ownerId')) {
+      if (!ownerId) {
+        updates.ownerId = null;
+        updates.ownerName = '';
+      } else {
+        if (!mongoose.Types.ObjectId.isValid(ownerId)) {
+          return res.status(400).json({ message: 'ownerId geçersiz' });
+        }
+        updates.ownerId = ownerId;
+      }
+    }
+    if (
+      Object.prototype.hasOwnProperty.call(req.body || {}, 'ownerName') &&
+      !Object.prototype.hasOwnProperty.call(updates, 'ownerName')
+    ) {
+      updates.ownerName = ownerName || '';
+    }
     if (typeof endDate !== 'undefined') updates.endDate = endDate;
     if (status) updates.status = status;
 
@@ -464,6 +479,7 @@ exports.updateProject = async (req, res, next) => {
       id: updated._id.toString(),
       name: updated.name,
       ownerId: updated.ownerId?.toString(),
+      ownerName: updated.ownerName || '',
       parentProjectId: updated.parentProjectId ? updated.parentProjectId.toString() : null,
       status: updated.status || 'Active',
       endDate: updated.endDate,

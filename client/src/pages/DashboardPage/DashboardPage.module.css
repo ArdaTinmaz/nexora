@@ -247,6 +247,104 @@
   background: rgba(190, 219, 176, 0.45);
 }
 
+.modalOverlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.58);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1200;
+  padding: 20px;
+}
+
+.modalCard {
+  width: min(440px, 100%);
+  background: #151515;
+  border: 1px solid #2f3b28;
+  border-radius: 14px;
+  padding: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.modalHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.modalTitle {
+  margin: 0;
+  font-size: 20px;
+  color: #fff;
+  font-weight: 600;
+}
+
+.modalCloseBtn {
+  border: 1px solid rgba(190, 219, 176, 0.25);
+  background: rgba(190, 219, 176, 0.08);
+  color: #d9f2cf;
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  cursor: pointer;
+  font-size: 22px;
+  line-height: 1;
+}
+
+.modalText {
+  margin: 0;
+  color: rgba(255, 255, 255, 0.75);
+  font-size: 14px;
+}
+
+.modalWarning {
+  color: #fca5a5;
+}
+
+.modalSelect {
+  width: 100%;
+  border: 1px solid rgba(190, 219, 176, 0.35);
+  background: #0f0f0f;
+  color: #e8f2e2;
+  border-radius: 10px;
+  padding: 10px 12px;
+  font-size: 14px;
+}
+
+.modalActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.modalBtnSecondary,
+.modalBtnPrimary {
+  border-radius: 10px;
+  padding: 10px 14px;
+  border: 1px solid rgba(190, 219, 176, 0.35);
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.modalBtnSecondary {
+  background: #1b1b1b;
+  color: #f3f3f3;
+}
+
+.modalBtnPrimary {
+  background: rgba(190, 219, 176, 0.16);
+  color: #d9f2cf;
+}
+
+.modalBtnPrimary:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
 @media (max-width: 1120px) {
   .todayGrid,
   .mainLayout {

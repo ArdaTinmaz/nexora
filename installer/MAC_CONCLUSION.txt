@@ -1,0 +1,4 @@
+Nexora installation is complete.
+
+By using this application, you agree to the Terms of Use and Privacy Policy (KVKK).
+You can now launch Nexora from the Applications folder.
