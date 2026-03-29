@@ -1,10 +1,13 @@
 const jwt = require('jsonwebtoken');
 const UserModel = require('../models/User');
+const { COOKIE_NAMES, getCookieFromRequest } = require('../security/authCookies');
 
 const authMiddleware = async (req, res, next) => {
   try {
     const authHeader = req.headers.authorization || '';
-    const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : null;
+    const bearerToken = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : '';
+    const cookieToken = getCookieFromRequest(req, COOKIE_NAMES.access);
+    const token = bearerToken || cookieToken || null;
 
     if (!token) {
       return res.status(401).json({ message: 'Unauthorized' });

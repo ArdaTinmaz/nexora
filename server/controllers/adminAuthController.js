@@ -13,17 +13,29 @@ const {
   recordAuthSuccess,
 } = require('../services/authSecurityService');
 const { logSecurityEvent } = require('../services/auditLogService');
+const { setAdminAuthCookie, clearAdminAuthCookie } = require('../security/authCookies');
 
 const getAdminCredentials = () => ({
-  username: process.env.ADMIN_USERNAME || 'admin',
-  password: process.env.ADMIN_PASSWORD || 'admin123',
-  email: process.env.ADMIN_EMAIL || '',
+  username: String(process.env.ADMIN_USERNAME || '').trim(),
+  password: String(process.env.ADMIN_PASSWORD || ''),
+  email: String(process.env.ADMIN_EMAIL || '').trim(),
 });
+
+const ensureBootstrapCredentials = () => {
+  const creds = getAdminCredentials();
+  if (!creds.username || !creds.password) {
+    const error = new Error(
+      'Admin bootstrap credentials are not configured. Set ADMIN_USERNAME and ADMIN_PASSWORD.'
+    );
+    error.statusCode = 500;
+    throw error;
+  }
+  return creds;
+};
 
 exports.login = async (req, res) => {
   const username = requireString(req.body?.username, 'Username/email', { max: 180 });
   const password = requireString(req.body?.password, 'Password', { max: 256, trim: false });
-  const creds = getAdminCredentials();
   const ip = extractClientIpFromRequest(req);
   const userAgent = getUserAgentFromRequest(req);
   const normalizedIdentifier = String(username || '').trim().toLowerCase();
@@ -76,6 +88,7 @@ exports.login = async (req, res) => {
       return res.status(401).json({ message: 'Invalid admin credentials' });
     }
   } else {
+    const creds = ensureBootstrapCredentials();
     const matchesUsername = creds.username.toLowerCase() === normalizedIdentifier;
     const matchesEmail = creds.email?.toLowerCase() === normalizedIdentifier;
     if ((!matchesUsername && !matchesEmail) || password !== creds.password) {
@@ -125,6 +138,7 @@ exports.login = async (req, res) => {
   const token = jwt.sign({ username: normalizedIdentifier, isAdmin: true }, process.env.JWT_SECRET, {
     expiresIn: process.env.ADMIN_JWT_EXPIRES_IN || '2h',
   });
+  setAdminAuthCookie(req, res, token);
 
   return res.json({ token, username: normalizedIdentifier });
 };
@@ -141,8 +155,8 @@ exports.requestPasswordReset = async (req, res, next) => {
     }
 
     const storedProfile = await AdminProfile.findOne().lean();
-    const creds = getAdminCredentials();
-    const expectedEmail = storedProfile?.email || creds.email;
+    const bootstrapCreds = storedProfile ? null : ensureBootstrapCredentials();
+    const expectedEmail = storedProfile?.email || bootstrapCreds?.email;
     const normalizedEmail = String(email).trim().toLowerCase();
 
     if (!validator.isEmail(normalizedEmail)) {
@@ -163,8 +177,6 @@ exports.requestPasswordReset = async (req, res, next) => {
     const codeHash = hashCode(code);
     const expiry = Date.now() + 15 * 60 * 1000;
 
-    const defaults = getAdminCredentials();
-    const passwordHash = await bcrypt.hash(defaults.password, 10);
     const setUpdates = {
       resetCodeHash: codeHash,
       resetCodeExpiry: expiry,
@@ -174,18 +186,22 @@ exports.requestPasswordReset = async (req, res, next) => {
       setUpdates.email = expectedEmail;
     }
 
+    const setOnInsert = {};
+    if (bootstrapCreds) {
+      const passwordHash = await bcrypt.hash(bootstrapCreds.password, 10);
+      setOnInsert.name = 'Admin';
+      setOnInsert.username = bootstrapCreds.username;
+      setOnInsert.email = expectedEmail;
+      setOnInsert.passwordHash = passwordHash;
+      setOnInsert.avatarURL = '';
+      setOnInsert.createdAt = Date.now();
+    }
+
     await AdminProfile.findOneAndUpdate(
       {},
       {
         $set: setUpdates,
-        $setOnInsert: {
-          name: 'Admin',
-          username: defaults.username,
-          email: expectedEmail,
-          passwordHash,
-          avatarURL: '',
-          createdAt: Date.now(),
-        },
+        $setOnInsert: setOnInsert,
       },
       { upsert: true, setDefaultsOnInsert: true }
     );
@@ -199,6 +215,15 @@ exports.requestPasswordReset = async (req, res, next) => {
     return res.status(200).json({
       message: 'If the account exists, a verification code was sent.',
     });
+  } catch (error) {
+    next(error);
+  }
+};
+
+exports.logout = async (req, res, next) => {
+  try {
+    clearAdminAuthCookie(req, res);
+    return res.status(200).json({ message: 'Admin logout successful.' });
   } catch (error) {
     next(error);
   }

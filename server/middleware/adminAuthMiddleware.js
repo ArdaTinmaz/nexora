@@ -1,9 +1,12 @@
 const jwt = require('jsonwebtoken');
+const { COOKIE_NAMES, getCookieFromRequest } = require('../security/authCookies');
 
 const adminAuthMiddleware = (req, res, next) => {
   try {
     const authHeader = req.headers.authorization || '';
-    const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : null;
+    const bearerToken = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : '';
+    const cookieToken = getCookieFromRequest(req, COOKIE_NAMES.adminAccess);
+    const token = bearerToken || cookieToken || null;
 
     if (!token) {
       return res.status(401).json({ message: 'Unauthorized' });

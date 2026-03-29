@@ -21,15 +21,19 @@ const {
 } = require('./utils/uploadsDir');
 
 const app = express();
+app.set('trust proxy', 1);
+
+const DEFAULT_ALLOWED_ORIGINS = ['http://localhost:3000', 'http://127.0.0.1:3000'];
 
 const parseAllowedOrigins = () => {
   if (!process.env.CLIENT_URL) {
-    return [];
+    return DEFAULT_ALLOWED_ORIGINS;
   }
 
-  return process.env.CLIENT_URL.split(',')
+  const parsed = process.env.CLIENT_URL.split(',')
     .map((origin) => origin.trim())
     .filter(Boolean);
+  return parsed.length ? parsed : DEFAULT_ALLOWED_ORIGINS;
 };
 
 const buildCorsConfig = () => {

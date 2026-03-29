@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { adminApi, getAdminToken } from '../../api/adminApi';
 import styles from './AdminPanel.module.css';
 
-const defaultCreds = { username: 'admin', password: 'admin123' }; // örnek giriş
+const defaultCreds = { username: '', password: '' };
 
 const AdminPanel = () => {
   const [token, setToken] = useState(getAdminToken());
@@ -244,7 +244,6 @@ const AdminPanel = () => {
       <div className={styles.loginWrapper}>
         <form className={styles.loginForm} onSubmit={handleLogin}>
           <h2>Admin Login</h2>
-          <p className={styles.subtle}>Örnek giriş: admin / admin123</p>
           <input
             placeholder="Username"
             value={loginForm.username}

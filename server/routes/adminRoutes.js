@@ -2,6 +2,7 @@ const express = require('express');
 const adminAuthMiddleware = require('../middleware/adminAuthMiddleware');
 const {
   login,
+  logout,
   requestPasswordReset,
   verifyPasswordReset,
   resetPassword,
@@ -35,6 +36,7 @@ const adminLoginRateLimiter = createEndpointRateLimiter({
 });
 
 router.post('/login', adminLoginRateLimiter, login);
+router.post('/logout', logout);
 router.post('/forgot-password/request', requestPasswordReset);
 router.post('/forgot-password/verify', verifyPasswordReset);
 router.post('/forgot-password/reset', resetPassword);

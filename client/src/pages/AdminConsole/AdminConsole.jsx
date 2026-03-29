@@ -12,6 +12,7 @@ const AdminConsole = () => {
 
   const [activeTab, setActiveTab] = useState('users');
   const [token, setToken] = useState(getAdminToken());
+  const [isBootstrapping, setIsBootstrapping] = useState(true);
   const [loading, setLoading] = useState(false);
   const [statusMsg, setStatusMsg] = useState('');
   const [adminProfile, setAdminProfile] = useState(defaultAdminProfile);
@@ -254,6 +255,13 @@ const AdminConsole = () => {
       }
       setStatusMsg('');
     } catch (err) {
+      if (err?.message === 'Unauthorized' || err?.message === 'Forbidden') {
+        await adminApi.logout();
+        setToken(null);
+        setStatusMsg('');
+        navigate('/admin/login', { replace: true });
+        return;
+      }
       setStatusMsg(err.message);
     } finally {
       setLoading(false);
@@ -261,11 +269,42 @@ const AdminConsole = () => {
   };
 
   useEffect(() => {
+    let cancelled = false;
+
+    const bootstrapAuth = async () => {
+      if (token) {
+        if (!cancelled) {
+          setIsBootstrapping(false);
+        }
+        return;
+      }
+
+      try {
+        await adminApi.adminProfile();
+        if (!cancelled) {
+          setToken('cookie');
+        }
+      } catch (_) {
+        // ignore bootstrap errors
+      } finally {
+        if (!cancelled) {
+          setIsBootstrapping(false);
+        }
+      }
+    };
+
+    bootstrapAuth();
+    return () => {
+      cancelled = true;
+    };
+  }, [token]);
+
+  useEffect(() => {
     loadData();
   }, [token]);
 
-  const handleLogout = () => {
-    adminApi.logout();
+  const handleLogout = async () => {
+    await adminApi.logout();
     setToken(null);
     setUsers([]);
     setTeams([]);
@@ -1694,6 +1733,10 @@ const AdminConsole = () => {
       />
     </>
   );
+
+  if (isBootstrapping) {
+    return null;
+  }
 
   if (!token) {
     return <Navigate to="/admin/login" replace />;

@@ -42,8 +42,6 @@ function Header() {
   useEffect(() => {
     const fetchProfile = async () => {
       try {
-        const stored = await getSession('user');
-        if (!stored?.token) return;
         const data = await userApi.getProfile();
         setUser(data?.user || null);
       } catch (err) {
@@ -55,8 +53,8 @@ function Header() {
       const storedAuth = await getSession('user');
       if (storedAuth?.user) {
         setUser(storedAuth.user);
-        fetchProfile();
       }
+      fetchProfile();
     };
 
     loadStoredSession();

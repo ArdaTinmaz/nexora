@@ -6,6 +6,7 @@ import { useNavigate } from 'react-router-dom';
 import styles from './RegisterForm.module.css';
 import { authApi } from '../../api/authApi';
 import { setSession } from '../../desktop/session';
+import { isDesktopApp } from '../../desktop/bridge';
 import { showNotification } from '../../desktop/notifications';
 
 const schema = yup.object({
@@ -61,17 +62,25 @@ function RegisterForm() {
         ...data,
         name: data.name?.trim(),
       });
+      const desktop = isDesktopApp();
 
-      if (!result?.token || !result?.refreshToken || !result?.user) {
+      if (!result?.user || (desktop && (!result?.token || !result?.refreshToken))) {
         setServerError('Registration failed. Please try again.');
         return;
       }
 
-      await setSession('user', {
-        token: result.token,
-        refreshToken: result.refreshToken,
-        user: result.user,
-      });
+      await setSession(
+        'user',
+        desktop
+          ? {
+              token: result.token,
+              refreshToken: result.refreshToken,
+              user: result.user,
+            }
+          : {
+              user: result.user,
+            }
+      );
       await showNotification({
         title: 'Nexora',
         body: `Account created for ${result.user.name || 'your team member'}.`,

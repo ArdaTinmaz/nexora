@@ -1,5 +1,4 @@
 import { getDesktopBridge, isDesktopApp } from '../desktop/bridge';
-import { getTokenSync } from '../desktop/session';
 import { runtime } from '../desktop/runtime';
 
 const handleResponsePayload = (payload) => {
@@ -81,18 +80,7 @@ const serializeBody = async (body) => {
   };
 };
 
-const buildWebHeaders = (headers, authScope) => {
-  const resolvedHeaders = { ...headers };
-
-  if (authScope !== 'none') {
-    const token = getTokenSync(authScope);
-    if (token) {
-      resolvedHeaders.Authorization = `Bearer ${token}`;
-    }
-  }
-
-  return resolvedHeaders;
-};
+const buildWebHeaders = (headers) => ({ ...headers });
 
 export const request = async (path, options = {}) => {
   const {
@@ -114,11 +102,12 @@ export const request = async (path, options = {}) => {
     return handleResponsePayload(payload);
   }
 
-  const webHeaders = buildWebHeaders(resolvedHeaders, authScope);
+  const webHeaders = buildWebHeaders(resolvedHeaders);
   const response = await fetch(`${runtime.apiBaseUrl}${path}`, {
     ...rest,
     headers: webHeaders,
     body,
+    credentials: 'include',
   });
 
   return handleResponsePayload({

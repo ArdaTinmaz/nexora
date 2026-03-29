@@ -7,6 +7,7 @@ import ForgotPasswordModal from '../ForgotPasswordModal/ForgotPasswordModal';
 import styles from './LoginForm.module.css';
 import { authApi } from '../../api/authApi';
 import { setSession } from '../../desktop/session';
+import { isDesktopApp } from '../../desktop/bridge';
 import { showNotification } from '../../desktop/notifications';
 
 const schema = yup.object({
@@ -50,17 +51,25 @@ function LoginForm() {
 
     try {
       const result = await authApi.login(payload);
+      const desktop = isDesktopApp();
 
-      if (!result?.token || !result?.refreshToken || !result?.user) {
+      if (!result?.user || (desktop && (!result?.token || !result?.refreshToken))) {
         setServerError('Login failed. Please check your credentials.');
         return;
       }
 
-      await setSession('user', {
-        token: result.token,
-        refreshToken: result.refreshToken,
-        user: result.user,
-      });
+      await setSession(
+        'user',
+        desktop
+          ? {
+              token: result.token,
+              refreshToken: result.refreshToken,
+              user: result.user,
+            }
+          : {
+              user: result.user,
+            }
+      );
       await showNotification({
         title: 'Nexora',
         body: `Welcome back, ${result.user.name || 'user'}.`,

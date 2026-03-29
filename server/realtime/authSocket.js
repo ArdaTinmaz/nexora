@@ -1,9 +1,12 @@
 const jwt = require('jsonwebtoken');
 const User = require('../models/User');
+const { COOKIE_NAMES, getCookieFromSocket } = require('../security/authCookies');
 
 const authenticateSocket = async (socket, next) => {
   try {
-    const token = socket.handshake.auth?.token;
+    const tokenFromAuthPayload = socket.handshake.auth?.token;
+    const tokenFromCookie = getCookieFromSocket(socket, COOKIE_NAMES.access);
+    const token = tokenFromAuthPayload || tokenFromCookie;
     if (!token) {
       return next(new Error('Unauthorized'));
     }

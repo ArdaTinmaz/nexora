@@ -17,9 +17,28 @@ const AdminLogin = () => {
   const [forgotPasswordConfirm, setForgotPasswordConfirm] = useState('');
 
   useEffect(() => {
-    if (getAdminToken()) {
-      navigate('/admin', { replace: true });
-    }
+    let cancelled = false;
+
+    const resolveExistingSession = async () => {
+      if (getAdminToken()) {
+        navigate('/admin', { replace: true });
+        return;
+      }
+
+      try {
+        await adminApi.adminProfile();
+        if (!cancelled) {
+          navigate('/admin', { replace: true });
+        }
+      } catch (_) {
+        // no active admin session
+      }
+    };
+
+    resolveExistingSession();
+    return () => {
+      cancelled = true;
+    };
   }, [navigate]);
 
   const handleLogin = async (e) => {

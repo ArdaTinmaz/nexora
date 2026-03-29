@@ -1,7 +1,14 @@
 import { getSessionSync, setSession, clearSession } from '../desktop/session';
+import { isDesktopApp } from '../desktop/bridge';
 import { request } from './httpClient';
 
-export const getAdminToken = () => getSessionSync('admin')?.token || null;
+export const getAdminToken = () => {
+  const session = getSessionSync('admin');
+  if (!session) return null;
+  if (session.token) return session.token;
+  if (!isDesktopApp() && session.authenticated) return 'cookie';
+  return null;
+};
 
 export const adminApi = {
   login: async ({ username, password }) => {
@@ -11,7 +18,12 @@ export const adminApi = {
       headers: {},
       authScope: 'none',
     });
-    await setSession('admin', { token: res.token, username: res.username });
+    await setSession(
+      'admin',
+      isDesktopApp()
+        ? { token: res.token, username: res.username }
+        : { authenticated: true, username: res.username }
+    );
     return res;
   },
   forgotAdminPassword: (payload) =>
@@ -35,7 +47,16 @@ export const adminApi = {
       headers: {},
       authScope: 'none',
     }),
-  logout: () => clearSession('admin'),
+  logout: async () => {
+    try {
+      await request('/admin/logout', {
+        method: 'POST',
+        authScope: 'none',
+      });
+    } finally {
+      await clearSession('admin');
+    }
+  },
   users: () => request('/admin/users', { authScope: 'admin' }),
   updateUserMeta: (userId, payload) =>
     request(`/admin/users/${userId}/meta`, {

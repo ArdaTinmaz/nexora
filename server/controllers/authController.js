@@ -22,6 +22,12 @@ const {
   recordAuthSuccess,
 } = require('../services/authSecurityService');
 const { logSecurityEvent } = require('../services/auditLogService');
+const {
+  COOKIE_NAMES,
+  getCookieFromRequest,
+  setUserAuthCookies,
+  clearUserAuthCookies,
+} = require('../security/authCookies');
 
 const buildUserResponse = (userDoc) => ({
   id: userDoc.id,
@@ -61,6 +67,7 @@ const sendAuthResponse = async ({ res, user, statusCode, message }) => {
   const token = generateToken(user.id, sessionVersion);
   const refreshToken = generateRefreshToken(user.id, sessionVersion);
   await saveRefreshToken(user.id, refreshToken);
+  setUserAuthCookies(res.req, res, { accessToken: token, refreshToken });
 
   res.status(statusCode).json({
     message,
@@ -264,10 +271,15 @@ exports.login = async (req, res, next) => {
 
 exports.refreshToken = async (req, res, next) => {
   try {
-    const refreshToken = requireString(req.body?.refreshToken, 'Refresh token', {
+    const refreshTokenFromBody = optionalString(req.body?.refreshToken, {
       max: 6000,
       trim: true,
     });
+    const refreshTokenFromCookie = getCookieFromRequest(req, COOKIE_NAMES.refresh);
+    const refreshToken = refreshTokenFromBody || refreshTokenFromCookie;
+    if (!refreshToken) {
+      return res.status(400).json({ message: 'Refresh token gereklidir' });
+    }
     const { ip, userAgent } = getAuthRequestMeta(req);
     const fingerprint = getRefreshTokenFingerprint(refreshToken);
     const attemptKeys = buildAttemptKeys({
@@ -426,8 +438,10 @@ exports.refreshToken = async (req, res, next) => {
 
 exports.logout = async (req, res, next) => {
   try {
-    const refreshToken = optionalString(req.body?.refreshToken, { max: 6000, trim: true });
-    const bearerToken = parseBearerToken(req);
+    const refreshTokenBody = optionalString(req.body?.refreshToken, { max: 6000, trim: true });
+    const refreshTokenCookie = getCookieFromRequest(req, COOKIE_NAMES.refresh);
+    const refreshToken = refreshTokenBody || refreshTokenCookie;
+    const bearerToken = parseBearerToken(req) || getCookieFromRequest(req, COOKIE_NAMES.access);
     const { ip, userAgent } = getAuthRequestMeta(req);
     const invalidatedUserIds = new Set();
 
@@ -479,6 +493,7 @@ exports.logout = async (req, res, next) => {
         invalidatedSessionCount: invalidatedUserIds.size,
       },
     });
+    clearUserAuthCookies(req, res);
 
     return res.status(200).json({ message: 'Çıkış yapıldı' });
   } catch (error) {

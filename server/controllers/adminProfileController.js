@@ -2,13 +2,25 @@ const bcrypt = require('bcryptjs');
 const validator = require('validator');
 const AdminProfile = require('../models/AdminProfile');
 
-const getEnvDefaults = () => ({
+const getBootstrapDefaults = () => ({
   name: 'Admin',
-  username: process.env.ADMIN_USERNAME || 'admin',
-  password: process.env.ADMIN_PASSWORD || 'admin123',
+  username: String(process.env.ADMIN_USERNAME || '').trim(),
+  password: String(process.env.ADMIN_PASSWORD || ''),
   email: process.env.ADMIN_EMAIL || '',
   avatarURL: '',
 });
+
+const ensureBootstrapCredentials = () => {
+  const defaults = getBootstrapDefaults();
+  if (!defaults.username || !defaults.password) {
+    const error = new Error(
+      'Admin bootstrap credentials are not configured. Set ADMIN_USERNAME and ADMIN_PASSWORD.'
+    );
+    error.statusCode = 500;
+    throw error;
+  }
+  return defaults;
+};
 
 const ensureDefaultProfile = async () => {
   const existing = await AdminProfile.findOne().lean();
@@ -16,7 +28,7 @@ const ensureDefaultProfile = async () => {
     return existing;
   }
 
-  const defaults = getEnvDefaults();
+  const defaults = ensureBootstrapCredentials();
   const passwordHash = await bcrypt.hash(defaults.password, 10);
   const created = await AdminProfile.create({
     name: defaults.name,
@@ -94,12 +106,13 @@ exports.updateAdminProfile = async (req, res, next) => {
       return res.status(400).json({ message: 'No changes provided.' });
     }
 
+    await ensureDefaultProfile();
     updates.updatedAt = Date.now();
 
     const updated = await AdminProfile.findOneAndUpdate(
       {},
       { $set: updates },
-      { new: true, upsert: true, setDefaultsOnInsert: true }
+      { new: true }
     ).lean();
 
     res.json({

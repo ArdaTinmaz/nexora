@@ -42,8 +42,9 @@ const {
 } = require('../security/socketPayloadSchemas');
 
 const getAllowedOrigins = () => {
-  if (!process.env.CLIENT_URL) return ['http://localhost:3000'];
-  return process.env.CLIENT_URL.split(',').map((item) => item.trim());
+  if (!process.env.CLIENT_URL) return ['http://localhost:3000', 'http://127.0.0.1:3000'];
+  const parsed = process.env.CLIENT_URL.split(',').map((item) => item.trim()).filter(Boolean);
+  return parsed.length ? parsed : ['http://localhost:3000', 'http://127.0.0.1:3000'];
 };
 
 const SOCKET_EVENT_LIMITS = {
